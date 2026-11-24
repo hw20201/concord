@@ -20,6 +20,7 @@ concord-tls = { workspace = true }
 concord-transport = { workspace = true }
 concord-quic = { workspace = true }
 concord-netstack = { workspace = true }
+nowhere = { workspace = true }
 tokio = { workspace = true, features = ["net", "time", "io-util", "macros", "rt", "sync"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }

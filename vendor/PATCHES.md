@@ -282,3 +282,42 @@ The package archive checksum is `10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662
   crates.io dependency gets, so 0.0.8's own warnings under the current toolchain (unused imports and variables
   without the `tracing` feature, elided lifetimes) reached every workspace build and the editor. This also hides
   warnings in the patches above: after changing one, run `cargo clippy` in `vendor/h3` with the line removed.
+
+## nowhere 3.4.0
+
+Source: [NodePassProject/Nowhere](https://github.com/NodePassProject/Nowhere), tag `v3.4.0`,
+commit `000001c866b0c9fada350c84bdc11702473564a6`. Unlike the crates above, Nowhere is not on
+crates.io: it is vendored from that tag and wired in as a path dependency
+(`nowhere = { path = "vendor/nowhere" }` in the workspace `Cargo.toml`, used by `concord-proxy`),
+with no `[patch.crates-io]` entry. Only `Cargo.toml`, `LICENSE`, `README.md`, `src/` and the
+`docs/protocol.md`, `docs/configuration.md`, `docs/prelude.md` and `docs/cipher.md` pages are
+copied; `.github/`, `Dockerfile`, `assets/` and `Cargo.lock` are omitted.
+
+The vendored `Cargo.toml` keeps its `[profile.release]` (`panic = "abort"`, `lto = "fat"`), but
+cargo applies profiles from the workspace root, so those settings are ignored for a non-workspace
+path dependency and the crate builds under the workspace's profiles.
+
+- `src/lib.rs`: `protocol`, `transport` and `vector` become `pub mod`, and the client surface is
+  re-exported at the crate root (`Credentials`, `Target`, `Carrier`, `FlowKind`, `SetupResult`,
+  `ALPN`, `Stats`, `PortalClient`, `PortalClientConfig`, `TcpTunnel`, `UdpTunnel`,
+  `UdpTunnelSender`, `UdpTunnelReceiver`, `ReceivedUdpPacket`, `OpenFlowError`).
+- `src/vector/mod.rs`: `client` becomes `pub mod`, and the client-surface re-exports become
+  `pub use`; `BoxReader`, `BoxWriter`, `TcpTunnelGuard` and `fetch_certificate_fingerprint` stay
+  crate-visible.
+- `src/vector/client/mod.rs`: `PortalClient`, `new`, `open_tcp` and `close` become public, and
+  two constructors are added: `from_url`, which builds a client from a `vector://` URL mirroring
+  the client construction in `VectorRuntime::build`, and `open_udp`, the method form of
+  `udp_flow::open_udp` (taking `&Arc<Self>` like `open_tcp`).
+- `src/vector/config.rs`: `PortalClientConfig`, `from_probe_url` and `endpoint()` become public;
+  the struct's fields stay crate-visible.
+- `src/vector/flow.rs`: `TcpTunnel`, `OpenFlowError`, `carrier()` and `close()` become public;
+  `into_parts`, `BoxReader` and `BoxWriter` stay crate-visible.
+- `src/vector/udp_flow/mod.rs`: `UdpTunnel`, `UdpTunnelSender`, `UdpTunnelReceiver` and the
+  free `open_udp` function become public, with the tunnel's `activate`, `cancellation`, `send`,
+  `recv_into`, `split_mut` and `close` methods; the `stream`/`quic` constructors stay
+  crate-visible.
+- `src/vector/udp_flow/io.rs`: `ReceivedUdpPacket`, `UdpTunnelSender::send`,
+  `UdpTunnelReceiver::recv_into` and `ReceivedUdpPacket::len`/`payload` become public.
+- `src/protocol/mod.rs`: `Credentials`, `Target`, `Carrier`, `FlowKind` and `SetupResult` are
+  re-exported with `pub use` (`ALPN` was already public); the other codecs and helpers stay
+  crate-visible.
