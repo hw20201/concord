@@ -18,8 +18,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   # The release budget in bytes for the desktop binary, `concord`. The design target is 15 MB.
-  # Raised from 30000000 when the vendored Nowhere protocol landed: the
-  # release binary grew to 30096088 bytes.
+  # Must stay above the release binary, which the vendored Nowhere
+  # protocol pushed past 30000000.
   CORE_MAX_BYTES: 31000000
 
 jobs:
