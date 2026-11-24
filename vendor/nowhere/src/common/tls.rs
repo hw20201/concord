@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use quinn::crypto::rustls::QuicServerConfig;
-use rustls::crypto::ring;
+// Concord: aws-lc-rs is the workspace's only rustls crypto provider; ring
+// would enable a second one and rustls could no longer pick a default.
+use rustls::crypto::aws_lc_rs;
 use url::Url;
 
 use crate::protocol::ALPN;
@@ -51,7 +53,7 @@ pub(crate) fn new_server_configs_with_reload_interval(
         _ => bail!("common::tls::new_server_configs: invalid tls mode"),
     };
 
-    let provider = Arc::new(ring::default_provider());
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let server_builder = rustls::ServerConfig::builder_with_provider(provider.clone())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .context("common::tls::new_server_configs: failed to configure TLS versions")?

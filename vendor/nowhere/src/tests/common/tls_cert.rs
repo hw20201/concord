@@ -65,7 +65,7 @@ impl PemFiles {
         load_certified_key(
             self.0.join("cert.pem").to_str().unwrap(),
             self.0.join("key.pem").to_str().unwrap(),
-            &rustls::crypto::ring::default_provider(),
+            &rustls::crypto::aws_lc_rs::default_provider(),
         )
     }
 }

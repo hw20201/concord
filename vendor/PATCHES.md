@@ -290,8 +290,8 @@ commit `000001c866b0c9fada350c84bdc11702473564a6`. Unlike the crates above, Nowh
 crates.io: it is vendored from that tag and wired in as a path dependency
 (`nowhere = { path = "vendor/nowhere" }` in the workspace `Cargo.toml`, used by `concord-proxy`),
 with no `[patch.crates-io]` entry. Only `Cargo.toml`, `LICENSE`, `README.md`, `src/` and the
-`docs/protocol.md`, `docs/configuration.md`, `docs/prelude.md` and `docs/cipher.md` pages are
-copied, plus a regenerated `Cargo.lock` for standalone builds of the crate (see below);
+`docs/protocol.md`, `docs/configuration.md`, `docs/prelude.md`, `docs/cipher.md` and
+`docs/telemetry.md` pages are copied, plus a regenerated `Cargo.lock` for standalone builds of the crate (see below);
 `.github/`, `Dockerfile` and `assets/` are omitted.
 
 The vendored `Cargo.toml` keeps its `[profile.release]` (`panic = "abort"`, `lto = "fat"`), but
@@ -342,3 +342,13 @@ path dependency and the crate builds under the workspace's profiles.
   path dependency; it was regenerated against the workspace's registry, so its
   dependency versions differ from the tag's lockfile and it is not part of the
   pinned manifest.
+- `Cargo.toml`, `src/common/tls.rs`, `src/vector/tls.rs`: the vendored crate uses aws-lc-rs as its
+  rustls crypto provider instead of ring (`quinn` `rustls-aws-lc-rs`, `rcgen`
+  `aws_lc_rs`, `rustls` `aws_lc_rs`, `tokio-rustls` `aws_lc_rs`, and
+  `aws_lc_rs::default_provider()` for the server and client configs). The workspace builds
+  rustls with `aws_lc_rs` only; a second provider leaves rustls with no
+  default `CryptoProvider`, and `ServerConfig::builder()` panics, which the
+  `concord-engine` probe TLS test hit. No upstream change is proposed:
+  upstream Nowhere ships ring, and the provider is a Concord embedding choice.
+- `src/tests/common/tls_cert.rs`, `src/tests/common/tls_support.rs`, `src/tests/portal/conn/prehello/mod.rs`: the test support uses the same aws-lc-rs provider as the library code above.
+- `src/tests/portal/prehello.rs`, `src/tests/toolbox/fingerprint.rs`, `src/tests/vector/tls.rs`: the test support uses the same aws-lc-rs provider as the library code above.

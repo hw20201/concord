@@ -19,10 +19,10 @@ hmac = "0.13.0"
 humantime = "2.4.0"
 libc = "0.2.191"
 percent-encoding = "2.3.2"
-quinn = { version = "0.11.12", default-features = false, features = ["bloom", "log", "runtime-tokio", "rustls-ring"] }
+quinn = { version = "0.11.12", default-features = false, features = ["bloom", "log", "runtime-tokio", "rustls-aws-lc-rs"] }
 quinn-proto = { version = "0.11.19", default-features = false }
-rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "aws_lc_rs"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 rustls-native-certs = "0.8.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -30,7 +30,7 @@ sha2 = "0.11.1"
 socket2 = "0.6.5"
 subtle = "2.6.1"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync", "signal"] }
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs"] }
 tokio-util = "0.7.20"
 url = "2.5.8"
 

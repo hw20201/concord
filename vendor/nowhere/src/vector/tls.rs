@@ -11,8 +11,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use quinn::Connection;
 use quinn::crypto::rustls::{HandshakeData, QuicClientConfig};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+// Concord: aws-lc-rs is the workspace's only rustls crypto provider; ring
+// would enable a second one and rustls could no longer pick a default.
 use rustls::crypto::{
-    WebPkiSupportedAlgorithms, ring, verify_tls12_signature, verify_tls13_signature,
+    WebPkiSupportedAlgorithms, aws_lc_rs, verify_tls12_signature, verify_tls13_signature,
 };
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
@@ -40,7 +42,7 @@ pub(crate) struct ClientTls {
 
 impl ClientTls {
     pub(crate) fn new(config: &PortalClientConfig) -> Result<Self> {
-        let provider = Arc::new(ring::default_provider());
+        let provider = Arc::new(aws_lc_rs::default_provider());
         let builder = rustls::ClientConfig::builder_with_provider(provider.clone())
             .with_protocol_versions(&[&rustls::version::TLS13])
             .context("vector::tls::ClientTls::new: failed to enable TLS 1.3")?;
@@ -159,7 +161,7 @@ pub async fn fetch_certificate_fingerprint(config: &PortalClientConfig) -> Resul
     let endpoint = config
         .tcp_endpoint()
         .context("TCP carrier is not configured")?;
-    let provider = Arc::new(ring::default_provider());
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let client = rustls::ClientConfig::builder_with_provider(provider.clone())
         .with_protocol_versions(&[&rustls::version::TLS13])?
         .dangerous()

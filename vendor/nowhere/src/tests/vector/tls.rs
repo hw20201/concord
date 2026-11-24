@@ -31,7 +31,7 @@ async fn client_prefers_fixed_nw3_alpn() {
         generated.signing_key.serialize_der(),
     ));
     let mut server =
-        rustls::ServerConfig::builder_with_provider(Arc::new(ring::default_provider()))
+        rustls::ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             .with_no_client_auth()
@@ -117,7 +117,7 @@ async fn test_pinned_handshake(pin: TestPin, sni: Option<&str>) -> Result<()> {
         generated.signing_key.serialize_der(),
     ));
     let mut server =
-        rustls::ServerConfig::builder_with_provider(Arc::new(ring::default_provider()))
+        rustls::ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             .with_no_client_auth()
@@ -169,7 +169,7 @@ async fn tcp_server_without_nw3_is_rejected() {
         generated.signing_key.serialize_der(),
     ));
     let mut server =
-        rustls::ServerConfig::builder_with_provider(Arc::new(ring::default_provider()))
+        rustls::ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             .with_no_client_auth()
@@ -206,7 +206,7 @@ async fn negotiate_quic(server_alpns: Vec<Vec<u8>>, pin: TestPin) -> Result<()> 
         generated.signing_key.serialize_der(),
     ));
     let mut rustls_server =
-        rustls::ServerConfig::builder_with_provider(Arc::new(ring::default_provider()))
+        rustls::ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             .with_no_client_auth()
