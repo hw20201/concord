@@ -10,6 +10,9 @@ ignore = [
   # russh-util 0.52, the latest, depends on chrono only for wasm32, a target Concord does not build; cargo-deny
   # still reports it because it checks every target.
   { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, a wasm32-only dependency of russh-util and not built for any Concord target" },
+  # humantime parses durations in the vendored Nowhere crate's config; it wraps chrono, so the same
+  # unmaintained advisory covers it, and no fixed release exists (all versions are affected).
+  { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained, duration parsing in the vendored Nowhere crate with no fixed release" },
 ]
 
 [licenses]
