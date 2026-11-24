@@ -35,7 +35,9 @@ pub use self::client::PortalClient;
 pub use self::config::PortalClientConfig;
 pub(crate) use self::flow::{BoxReader, BoxWriter, TcpTunnelGuard};
 pub use self::flow::{OpenFlowError, TcpTunnel};
-pub(crate) use self::tls::fetch_certificate_fingerprint;
+// Concord: public so Concord's proxy crate can fetch a leaf certificate's
+// fingerprint for the `pin=` workflow without going through the toolbox.
+pub use self::tls::fetch_certificate_fingerprint;
 pub use self::udp_flow::{ReceivedUdpPacket, UdpTunnel, UdpTunnelReceiver, UdpTunnelSender};
 
 const SOCKS_CLIENT_RESOURCE_LIMIT: usize = 1024;

@@ -17,7 +17,9 @@ pub(crate) enum UdpDatagramSend {
     DroppedTooLarge,
 }
 
-pub(crate) struct BudgetedDatagram {
+// Concord: public so the public `ReceivedUdpPacket::Owned` variant can name
+// it; the payload and its budget permit stay crate-visible.
+pub struct BudgetedDatagram {
     pub(crate) payload: Bytes,
     _permit: OwnedSemaphorePermit,
 }

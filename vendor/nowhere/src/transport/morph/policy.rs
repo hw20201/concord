@@ -12,7 +12,8 @@ pub(super) const TCP_PRELUDE_ENV: &str = "NOW_MORPH_TCP_PRELUDE";
 pub(super) const UDP_PRELUDE_ENV: &str = "NOW_MORPH_UDP_PRELUDE";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PreludePolicy {
+// Concord: crate-visible so `MorphKeys` can hand its policies to the transports.
+pub(crate) enum PreludePolicy {
     Fade,
     Full8,
     Low7,
@@ -21,6 +22,32 @@ pub(super) enum PreludePolicy {
 impl PreludePolicy {
     pub(super) fn from_env(env: &str) -> io::Result<Self> {
         Self::parse(env, std::env::var(env))
+    }
+
+    // Concord: parses one policy name, so a client URL can carry a per-node
+    // prelude policy (`tcp-prelude`/`udp-prelude`) the same way the process
+    // environment does; the URL value wins over the environment.
+    pub(super) fn parse_name(value: &str) -> Option<Self> {
+        match value {
+            "fade" => Some(Self::Fade),
+            "full8" => Some(Self::Full8),
+            "low7" => Some(Self::Low7),
+            _ => None,
+        }
+    }
+
+    // Concord: a URL query value wins; without one the environment decides,
+    // as upstream does.
+    pub(super) fn from_url_or_env(url: &url::Url, query_key: &str, env: &str) -> io::Result<Self> {
+        if let Some(value) = crate::common::first_raw_query_value(url, query_key) {
+            return Self::parse_name(value).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{query_key} must be fade, full8 or low7"),
+                )
+            });
+        }
+        Self::from_env(env)
     }
 
     pub(super) fn parse(env: &str, value: Result<String, std::env::VarError>) -> io::Result<Self> {

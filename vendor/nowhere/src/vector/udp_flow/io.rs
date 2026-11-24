@@ -73,6 +73,8 @@ impl UdpTunnelReceiver {
 }
 
 // Concord: public so Concord's proxy crate can hold a received UDP packet.
+// `BudgetedDatagram` is public for the same reason; its payload stays
+// crate-visible and is read through `ReceivedUdpPacket::payload`.
 pub enum ReceivedUdpPacket {
     Buffered(Range<usize>),
     Owned(BudgetedDatagram),

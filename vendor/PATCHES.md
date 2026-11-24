@@ -291,7 +291,8 @@ crates.io: it is vendored from that tag and wired in as a path dependency
 (`nowhere = { path = "vendor/nowhere" }` in the workspace `Cargo.toml`, used by `concord-proxy`),
 with no `[patch.crates-io]` entry. Only `Cargo.toml`, `LICENSE`, `README.md`, `src/` and the
 `docs/protocol.md`, `docs/configuration.md`, `docs/prelude.md` and `docs/cipher.md` pages are
-copied; `.github/`, `Dockerfile`, `assets/` and `Cargo.lock` are omitted.
+copied, plus a regenerated `Cargo.lock` for standalone builds of the crate (see below);
+`.github/`, `Dockerfile` and `assets/` are omitted.
 
 The vendored `Cargo.toml` keeps its `[profile.release]` (`panic = "abort"`, `lto = "fat"`), but
 cargo applies profiles from the workspace root, so those settings are ignored for a non-workspace
@@ -300,16 +301,32 @@ path dependency and the crate builds under the workspace's profiles.
 - `src/lib.rs`: `protocol`, `transport` and `vector` become `pub mod`, and the client surface is
   re-exported at the crate root (`Credentials`, `Target`, `Carrier`, `FlowKind`, `SetupResult`,
   `ALPN`, `Stats`, `PortalClient`, `PortalClientConfig`, `TcpTunnel`, `UdpTunnel`,
-  `UdpTunnelSender`, `UdpTunnelReceiver`, `ReceivedUdpPacket`, `OpenFlowError`).
+  `UdpTunnelSender`, `UdpTunnelReceiver`, `ReceivedUdpPacket`, `OpenFlowError`,
+  `fetch_certificate_fingerprint`).
 - `src/vector/mod.rs`: `client` becomes `pub mod`, and the client-surface re-exports become
-  `pub use`; `BoxReader`, `BoxWriter`, `TcpTunnelGuard` and `fetch_certificate_fingerprint` stay
-  crate-visible.
+  `pub use`; `BoxReader`, `BoxWriter` and `TcpTunnelGuard` stay crate-visible.
+  `fetch_certificate_fingerprint` is public so Concord can read a leaf
+  certificate's fingerprint for the `pin=` workflow.
 - `src/vector/client/mod.rs`: `PortalClient`, `new`, `open_tcp` and `close` become public, and
   two constructors are added: `from_url`, which builds a client from a `vector://` URL mirroring
   the client construction in `VectorRuntime::build`, and `open_udp`, the method form of
   `udp_flow::open_udp` (taking `&Arc<Self>` like `open_tcp`).
 - `src/vector/config.rs`: `PortalClientConfig`, `from_probe_url` and `endpoint()` become public;
-  the struct's fields stay crate-visible.
+  the struct's fields stay crate-visible. The `vector://` URL gains Concord-only
+  query values: `handshake-timeout` and `setup-timeout` in milliseconds (0 leaves
+  the default in place, anything else must stay within 0..=300000) and
+  `tcp-prelude`/`udp-prelude` (`fade`, `full8` or `low7`); the setup timeout is
+  carried on the config into `PortalClient::new`.
+- `src/vector/tls.rs`: `fetch_certificate_fingerprint` becomes public.
+- `src/transport/morph/policy.rs`: `PreludePolicy` gains `parse_name` and
+  `from_url_or_env`, so a URL query value wins over the process environment.
+- `src/transport/morph.rs`, `src/transport/morph/tcp.rs`, `src/transport/morph/udp.rs`: `MorphKeys` carries the TCP and UDP prelude policies
+  from the URL (falling back to the environment, then fade) and exposes them to
+  the transports; `tcp.rs` and `udp.rs` write the prelude from the keys instead
+  of reading the environment at connect time.
+- `src/common/datagram.rs`: `BudgetedDatagram` becomes public so the public
+  `ReceivedUdpPacket::Owned` variant can name it; its payload and budget permit
+  stay crate-visible.
 - `src/vector/flow.rs`: `TcpTunnel`, `OpenFlowError`, `carrier()` and `close()` become public;
   `into_parts`, `BoxReader` and `BoxWriter` stay crate-visible.
 - `src/vector/udp_flow/mod.rs`: `UdpTunnel`, `UdpTunnelSender`, `UdpTunnelReceiver` and the
@@ -321,3 +338,7 @@ path dependency and the crate builds under the workspace's profiles.
 - `src/protocol/mod.rs`: `Credentials`, `Target`, `Carrier`, `FlowKind` and `SetupResult` are
   re-exported with `pub use` (`ALPN` was already public); the other codecs and helpers stay
   crate-visible.
+- `Cargo.lock`: the vendored crate keeps a lockfile for standalone builds of the
+  path dependency; it was regenerated against the workspace's registry, so its
+  dependency versions differ from the tag's lockfile and it is not part of the
+  pinned manifest.

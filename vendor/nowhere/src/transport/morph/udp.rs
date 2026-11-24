@@ -61,7 +61,7 @@ pub(crate) fn wrap_morph_udp_socket(
                 tx_key,
                 rx_key,
                 role,
-                send: Mutex::new(UdpSendState::new(role)?),
+                send: Mutex::new(UdpSendState::new(role, keys.udp_prelude_policy())?),
                 receive: Mutex::new(UdpReceiveState::new()),
             }))
         }
@@ -80,10 +80,12 @@ pub(super) struct UdpSendState {
 }
 
 impl UdpSendState {
-    fn new(role: UdpRole) -> io::Result<Self> {
+    // Concord: the policy comes from the client's keys, so a per-node
+    // `udp-prelude` URL value reaches the socket instead of the environment.
+    fn new(role: UdpRole, policy: PreludePolicy) -> io::Result<Self> {
         let mut state = Self::from_seed(random_seed()?);
         if matches!(role, UdpRole::Client) {
-            state.prelude = Some(PreludePolicy::from_env(UDP_PRELUDE_ENV)?.generate_udp()?);
+            state.prelude = Some(policy.generate_udp()?);
         }
         Ok(state)
     }

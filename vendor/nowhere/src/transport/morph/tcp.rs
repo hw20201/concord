@@ -52,7 +52,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> MorphTcpStream<S> {
         let Some(keys) = keys else {
             return Ok(Self { inner, morph: None });
         };
-        let mut prelude = PreludePolicy::from_env(TCP_PRELUDE_ENV)?.generate_tcp()?;
+        let mut prelude = keys.tcp_prelude_policy().generate_tcp()?;
         let mut nonce = [0u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(io::Error::other)?;
         keys.encode_prelude(&mut prelude, &nonce, identity.allocate()?);

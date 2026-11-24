@@ -152,7 +152,9 @@ impl ClientTls {
     }
 }
 
-pub(crate) async fn fetch_certificate_fingerprint(config: &PortalClientConfig) -> Result<String> {
+// Concord: public so Concord's proxy crate can fetch a leaf certificate's
+// fingerprint for the `pin=` workflow.
+pub async fn fetch_certificate_fingerprint(config: &PortalClientConfig) -> Result<String> {
     crate::common::validate_timeout_env()?;
     let endpoint = config
         .tcp_endpoint()

@@ -15,7 +15,21 @@ use crate::common::{
 };
 use crate::transport::{MorphCipher, MorphKeys};
 
-const VECTOR_QUERY_KEYS: &[&str] = &["in", "sni", "pin", "rate", "etar", "morph", "cipher"];
+const VECTOR_QUERY_KEYS: &[&str] = &[
+    "in",
+    "sni",
+    "pin",
+    "rate",
+    "etar",
+    "morph",
+    "cipher",
+    // Concord: per-node timeouts and prelude policies, read by the client
+    // configuration below; the prelude keys are read by `MorphKeys::from_url`.
+    "handshake-timeout",
+    "setup-timeout",
+    "tcp-prelude",
+    "udp-prelude",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CarrierMode {
@@ -37,6 +51,9 @@ impl CarrierMode {
 // fields stay crate-visible and it is built through `from_probe_url`.
 pub struct PortalClientConfig {
     pub(crate) handshake_timeout: Duration,
+    // Concord: flow-setup timeout for this client; 0 in the URL leaves the
+    // `NOW_FLOW_SETUP_TIMEOUT` default (20 s) in place.
+    pub(crate) setup_timeout: Duration,
     pub(crate) remote: ServiceEndpoint,
     pub(crate) net: CarrierMode,
     pub(crate) morph: bool,
@@ -131,10 +148,13 @@ impl PortalClientConfig {
             bail!("pin must be 64 lowercase hex characters");
         }
         Ok(Self {
-            handshake_timeout: crate::common::read_handshake_timeout(
-                &mut crate::common::env_value,
-                url,
-            )?,
+            handshake_timeout: match timeout_ms(query, "handshake-timeout", context)? {
+                Some(ms) => Duration::from_millis(ms),
+                None => crate::common::read_handshake_timeout(&mut crate::common::env_value, url)?,
+            },
+            setup_timeout: timeout_ms(query, "setup-timeout", context)?
+                .map(Duration::from_millis)
+                .unwrap_or_else(crate::common::flow_setup_timeout),
             remote,
             net,
             morph,
@@ -270,6 +290,20 @@ fn validate_options(query: &HashMap<String, String>) -> Result<()> {
     parse_rate(query.get("rate").map(String::as_str), "rate")?;
     parse_rate(query.get("etar").map(String::as_str), "etar")?;
     Ok(())
+}
+
+// Concord: a timeout query value in milliseconds; absent or 0 leaves the
+// default in place, anything else must stay within 0..=300000.
+fn timeout_ms(query: &HashMap<String, String>, key: &str, context: &str) -> Result<Option<u64>> {
+    let Some(raw) = query.get(key) else {
+        return Ok(None);
+    };
+    let value: u64 = raw
+        .parse()
+        .ok()
+        .filter(|value| *value <= 300_000)
+        .ok_or_else(|| anyhow!("{context}: {key} must be between 0 and 300000 milliseconds"))?;
+    Ok(if value == 0 { None } else { Some(value) })
 }
 
 fn parse_rate(value: Option<&str>, name: &str) -> Result<i32> {

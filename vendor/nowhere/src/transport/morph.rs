@@ -36,6 +36,8 @@ const TCP_PRELUDE_MASK_INFO: &[u8] = b"tcp prelude mask";
 
 type MorphKeyBytes = [u8; 32];
 
+use policy::{PreludePolicy, TCP_PRELUDE_ENV, UDP_PRELUDE_ENV};
+
 #[derive(Clone)]
 pub(crate) struct MorphKeys {
     cipher: MorphCipher,
@@ -45,6 +47,10 @@ pub(crate) struct MorphKeys {
     udp_s2c: MorphKeyBytes,
     tcp_prelude_auth: MorphKeyBytes,
     tcp_prelude_mask: MorphKeyBytes,
+    // Concord: per-client prelude policies, from the URL query when present
+    // (`tcp-prelude`/`udp-prelude`), else the process environment, else fade.
+    tcp_prelude: PreludePolicy,
+    udp_prelude: PreludePolicy,
 }
 
 impl fmt::Debug for MorphKeys {
@@ -57,8 +63,20 @@ impl MorphKeys {
     pub(crate) fn from_url(url: &url::Url, cipher: MorphCipher) -> anyhow::Result<Self> {
         Ok(Self {
             cipher,
+            tcp_prelude: PreludePolicy::from_url_or_env(url, "tcp-prelude", TCP_PRELUDE_ENV)?,
+            udp_prelude: PreludePolicy::from_url_or_env(url, "udp-prelude", UDP_PRELUDE_ENV)?,
             ..Self::derive(&crate::protocol::Credentials::decode_shared_key(url)?)
         })
+    }
+
+    // Concord: the prelude policy this client's TCP flows write.
+    pub(crate) fn tcp_prelude_policy(&self) -> PreludePolicy {
+        self.tcp_prelude
+    }
+
+    // Concord: the prelude policy this client's UDP flows write.
+    pub(crate) fn udp_prelude_policy(&self) -> PreludePolicy {
+        self.udp_prelude
     }
 
     pub(crate) fn cipher_query(&self) -> &'static str {
@@ -75,6 +93,9 @@ impl MorphKeys {
             udp_s2c: hkdf_expand_one(root, UDP_S2C_INFO),
             tcp_prelude_auth: hkdf_expand_one(root, TCP_PRELUDE_AUTH_INFO),
             tcp_prelude_mask: hkdf_expand_one(root, TCP_PRELUDE_MASK_INFO),
+            // Concord: derived keys carry no URL, so both policies stay fade.
+            tcp_prelude: PreludePolicy::Fade,
+            udp_prelude: PreludePolicy::Fade,
         }
     }
 

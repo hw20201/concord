@@ -62,13 +62,16 @@ impl PortalClient {
     ) -> Result<Arc<Self>> {
         crate::common::validate_timeout_env()?;
         let tls = ClientTls::new(&config)?;
+        let setup_timeout = config.setup_timeout;
         Ok(Arc::new(Self {
             config,
             stats,
             account_stats,
             credentials: credentials.clone(),
             tls,
-            flow_setup_timeout: crate::common::flow_setup_timeout(),
+            // Concord: the flow-setup timeout comes from the client
+            // configuration, which reads a `setup-timeout` URL value when present.
+            flow_setup_timeout: setup_timeout,
             udp_queue_bytes,
             quic: Mutex::new(None),
             shutdown,
