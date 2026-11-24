@@ -42,6 +42,9 @@ mod tests {
             }
             "vless" => json!({"uuid": "b831381d-6324-4d53-ad4f-8cda48b30811"}),
             "trojan" | "anytls" => json!({"password": "p"}),
+            "nowhere" => {
+                json!({"password": "0123456789abcdef0123456789abcdef"})
+            }
             "hysteria" => json!({"up": "10", "down": "10"}),
             "hysteria2" => json!({"password": "p"}),
             "tuic" => json!({"uuid": "b831381d-6324-4d53-ad4f-8cda48b30811", "password": "p"}),

@@ -437,6 +437,26 @@ pub struct AnyTlsOpts {
     pub disable_reuse: bool,
 }
 
+/// Nowhere (NW3): the TLS carrier is always on with the fixed ALPN, and the
+/// certificate is always verified, so there is no `TlsOpts` here; `pin` is the
+/// leaf certificate's SHA-256. Timeouts are milliseconds, 0 leaving the
+/// default in place. `tcp_prelude`/`udp-prelude` are `fade`, `full8` or
+/// `low7`, empty meaning fade.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NowhereOpts {
+    pub server: String,
+    pub port: u16,
+    pub password: String,
+    pub network: String,
+    pub sni: String,
+    pub pin: String,
+    pub morph: bool,
+    pub tcp_prelude: String,
+    pub udp_prelude: String,
+    pub handshake_timeout: u32,
+    pub setup_timeout: u32,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Socks5Opts {
     pub server: String,
@@ -650,6 +670,7 @@ pub enum ProxyKind {
     Hysteria2(Box<Hysteria2Opts>),
     Tuic(Box<TuicOpts>),
     AnyTls(Box<AnyTlsOpts>),
+    Nowhere(Box<NowhereOpts>),
     Socks5(Socks5Opts),
     GostRelay(Box<GostRelayOpts>),
     Http(HttpProxyOpts),
@@ -677,6 +698,7 @@ impl ProxyKind {
             ProxyKind::Hysteria2(_) => "hysteria2",
             ProxyKind::Tuic(_) => "tuic",
             ProxyKind::AnyTls(_) => "anytls",
+            ProxyKind::Nowhere(_) => "nowhere",
             ProxyKind::Socks5(_) => "socks5",
             ProxyKind::GostRelay(_) => "gost-relay",
             ProxyKind::Http(_) => "http",
@@ -707,6 +729,7 @@ impl ProxyKind {
             ProxyKind::Hysteria2(o) => Some((&o.server, o.port)),
             ProxyKind::Tuic(o) => Some((&o.server, o.port)),
             ProxyKind::AnyTls(o) => Some((&o.server, o.port)),
+            ProxyKind::Nowhere(o) => Some((&o.server, o.port)),
             ProxyKind::Socks5(o) => Some((&o.server, o.port)),
             ProxyKind::GostRelay(o) => Some((&o.server, o.port)),
             ProxyKind::Http(o) => Some((&o.server, o.port)),

@@ -90,6 +90,27 @@ fn unavailable_congestion(kind: &ProxyKind) -> Option<&str> {
 /// What the node's options say that the app should show, beyond what makes it unsupported.
 pub fn proxy_warnings(def: &ProxyDef) -> Vec<String> {
     let mut out = def.ignored.clone();
+    if let ProxyKind::Nowhere(_) = &def.kind {
+        // The vendored client dials with its own sockets, so the dial options
+        // it cannot honour are named instead of silently dropped.
+        let bypassed: Vec<&str> = [
+            (!def.common.dialer_proxy.is_empty()).then_some("dialer-proxy"),
+            (!def.common.interface_name.is_empty()).then_some("interface-name"),
+            (def.common.routing_mark != 0).then_some("routing-mark"),
+            def.common.tfo.then_some("tfo"),
+            def.common.mptcp.then_some("mptcp"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if !bypassed.is_empty() {
+            out.push(format!(
+                "{} {} not applied: Nowhere dials with its own sockets",
+                bypassed.join(", "),
+                if bypassed.len() == 1 { "is" } else { "are" }
+            ));
+        }
+    }
     if let Some(name) = unavailable_congestion(&def.kind) {
         out.push(format!(
             "ip-stack.congestion-controller {name} is not available, so cubic runs instead"
@@ -309,5 +330,27 @@ mod tests {
             ]
         );
         assert!(node(json!(["1.1.1.1"])).is_empty());
+    }
+
+    #[test]
+    fn nowhere_names_the_dial_options_its_own_sockets_skip() {
+        let key = "0123456789abcdef0123456789abcdef";
+        let node = |extra: Value| {
+            let mut map = json!({"name": "n", "type": "nowhere", "server": "h.test",
+                "port": 443, "password": key});
+            map.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            warnings(map)
+        };
+        assert!(node(json!({})).is_empty());
+        assert_eq!(
+            node(json!({"dialer-proxy": "next", "tfo": true})),
+            ["dialer-proxy, tfo are not applied: Nowhere dials with its own sockets"]
+        );
+        assert_eq!(
+            node(json!({"interface-name": "eth0"})),
+            ["interface-name is not applied: Nowhere dials with its own sockets"]
+        );
     }
 }

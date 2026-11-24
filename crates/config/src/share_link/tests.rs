@@ -282,6 +282,34 @@ fn proxy_links_read_back() {
         ],
     );
     check(
+        json!({"name": "nw", "type": "nowhere", "server": "n.example", "port": 443,
+            "password": "0123456789abcdef0123456789abcdef", "network": "udp",
+            "sni": "s.example", "pin": "a".repeat(64), "morph": false}),
+        "nowhere://0123456789abcdef0123456789abcdef@n.example:443?",
+        &[
+            ("name", "nw"),
+            ("password", "0123456789abcdef0123456789abcdef"),
+            ("network", "udp"),
+            ("sni", "s.example"),
+            (
+                "pin",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ),
+            ("morph", "false"),
+        ],
+    );
+    check(
+        json!({"name": "nw2", "type": "nowhere", "server": "n.example", "port": 443,
+            "password": "0123456789abcdef0123456789abcdef"}),
+        "nowhere://0123456789abcdef0123456789abcdef@n.example:443#nw2",
+        &[
+            ("name", "nw2"),
+            ("password", "0123456789abcdef0123456789abcdef"),
+            ("network", "tcp"),
+            ("morph", "true"),
+        ],
+    );
+    check(
         json!({"name": "mieru", "type": "mieru", "server": "l.example", "port": 2999, "transport": "TCP",
             "username": "u", "password": "p", "multiplexing": "MULTIPLEXING_LOW"}),
         "",
@@ -399,4 +427,24 @@ fn hysteria2_port_hopping_links() {
     assert_eq!(proxies[0]["port"], "443");
     assert_eq!(proxies[0]["ports"], "443,20000-30000");
     assert_eq!(proxies[0]["password"], "pw");
+}
+
+#[test]
+fn nowhere_links_with_a_password_or_a_path_do_not_decode() {
+    for line in [
+        "nowhere://key:secret@n.example:443#n",
+        "nowhere://key@n.example/tcp:443#n",
+        "nowhere://@n.example:443#n",
+    ] {
+        assert!(decode_subscription(line).is_err(), "{line}");
+    }
+}
+
+#[test]
+fn a_nowhere_link_without_a_name_takes_the_server() {
+    let proxies =
+        decode_subscription("nowhere://0123456789abcdef0123456789abcdef@n.example:443").unwrap();
+    assert_eq!(proxies[0]["name"], "n.example");
+    assert_eq!(proxies[0]["network"], "tcp");
+    assert_eq!(proxies[0]["morph"], Value::Bool(true));
 }

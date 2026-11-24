@@ -117,6 +117,7 @@ pub fn encode_share_link(proxy: &Map) -> String {
         "socks5" => socks(f, "socks5"),
         "http" => socks(f, if f.flag("tls") { "https" } else { "http" }),
         "anytls" => anytls(f),
+        "nowhere" => nowhere(f),
         "mieru" => mieru(f),
         _ => String::new(),
     }
@@ -509,6 +510,28 @@ fn anytls(f: Fields<'_>) -> String {
     set_if(&mut query, "hpkp", f.str("fingerprint"));
     share_url(
         "anytls",
+        Some(user_text(&f.str("password"), None)),
+        &host_port(f),
+        &query,
+        &f.str("name"),
+    )
+}
+
+fn nowhere(f: Fields<'_>) -> String {
+    if f.str("password").is_empty() {
+        return String::new();
+    }
+    let mut query = Query::new();
+    if f.str("network") == "udp" {
+        set(&mut query, "net", "udp");
+    }
+    if f.str("morph") == "false" {
+        set(&mut query, "morph", "0");
+    }
+    set_if(&mut query, "sni", f.str("sni"));
+    set_if(&mut query, "pin", f.str("pin"));
+    share_url(
+        "nowhere",
         Some(user_text(&f.str("password"), None)),
         &host_port(f),
         &query,

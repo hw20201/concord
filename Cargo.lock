@@ -1417,6 +1417,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tracing",
+ "url",
  "uuid",
  "x25519-dalek 3.0.0",
  "x509-parser",
