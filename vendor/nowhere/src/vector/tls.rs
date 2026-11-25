@@ -16,6 +16,8 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::crypto::{
     WebPkiSupportedAlgorithms, aws_lc_rs, verify_tls12_signature, verify_tls13_signature,
 };
+#[cfg(target_os = "android")]
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use socket2::{SockRef, TcpKeepalive};
@@ -55,19 +57,13 @@ impl ClientTls {
                 }))
                 .with_no_client_auth()
         } else {
-            let native = rustls_native_certs::load_native_certs();
-            if !native.errors.is_empty() {
-                bail!(
-                    "vector::tls::ClientTls::new: system root loading failed: {:?}",
-                    native.errors
-                );
-            }
-            let mut roots = rustls::RootCertStore::empty();
-            for certificate in native.certs {
-                roots
-                    .add(certificate)
-                    .context("vector::tls::ClientTls::new: invalid system root")?;
-            }
+            // Concord: `rustls-native-certs` cannot see Android's system store:
+            // on Android it probes a Termux-only file and `/etc/ssl/certs`,
+            // neither of which exists in a normal app, so the root set comes
+            // back empty and every Nowhere node fails to build. Load the
+            // roots the same way Concord's platform crate does instead.
+            let roots = load_system_roots()
+                .context("vector::tls::ClientTls::new: failed to load system roots")?;
             if roots.is_empty() {
                 bail!("vector::tls::ClientTls::new: no system trust roots available");
             }
@@ -299,6 +295,46 @@ impl ServerCertVerifier for FingerprintCertificateInspection {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         self.algorithms.supported_schemes()
+    }
+}
+
+// Concord: system root certificates, Android-aware. Android keeps its system
+// CA store at `/system/etc/security/cacerts` and
+// `/apex/com.android.conscrypt/cacerts`; `rustls-native-certs` does not look
+// there (it probes a Termux-only file and `/etc/ssl/certs`), so on Android
+// read those two directories directly. Elsewhere, use the OS store through
+// `rustls-native-certs`, tolerating individual load errors instead of failing
+// the whole client when one certificate cannot be read.
+fn load_system_roots() -> Result<rustls::RootCertStore> {
+    #[cfg(target_os = "android")]
+    {
+        let mut roots = rustls::RootCertStore::empty();
+        for dir in [
+            "/system/etc/security/cacerts",
+            "/apex/com.android.conscrypt/cacerts",
+        ] {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let Ok(bytes) = std::fs::read(entry.path()) else {
+                    continue;
+                };
+                for cert in CertificateDer::pem_slice_iter(&bytes).flatten() {
+                    let _ = roots.add(cert);
+                }
+            }
+        }
+        Ok(roots)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let native = rustls_native_certs::load_native_certs();
+        let mut roots = rustls::RootCertStore::empty();
+        for certificate in native.certs {
+            let _ = roots.add(certificate);
+        }
+        Ok(roots)
     }
 }
 

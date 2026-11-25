@@ -23,7 +23,6 @@ quinn = { version = "0.11.12", default-features = false, features = ["bloom", "l
 quinn-proto = { version = "0.11.19", default-features = false }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "aws_lc_rs"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
-rustls-native-certs = "0.8.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
@@ -44,6 +43,12 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Threading",
     "Win32_System_Pipes",
 ] }
+
+# Concord: only non-Android targets load roots through `rustls-native-certs`;
+# Android reads its system stores directly (see `load_system_roots` in
+# `src/vector/tls.rs`), so the crate is not a dependency there.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rustls-native-certs = "0.8.5"
 
 [profile.release]
 lto = "fat"

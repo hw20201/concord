@@ -318,6 +318,16 @@ path dependency and the crate builds under the workspace's profiles.
   `tcp-prelude`/`udp-prelude` (`fade`, `full8` or `low7`); the setup timeout is
   carried on the config into `PortalClient::new`.
 - `src/vector/tls.rs`: `fetch_certificate_fingerprint` becomes public.
+- `src/vector/tls.rs`, `Cargo.toml`: `ClientTls::new` loads system roots
+  through a Concord `load_system_roots()` instead of `rustls-native-certs`
+  directly. On Android it reads `/system/etc/security/cacerts` and
+  `/apex/com.android.conscrypt/cacerts` (the `rustls-native-certs` probe looks
+  for a Termux-only file and `/etc/ssl/certs`, neither of which exists in a
+  normal app, so the root set came back empty and every Nowhere node failed
+  to build); elsewhere it still uses `rustls-native-certs` but tolerates
+  individual load errors instead of failing the whole client.
+  `rustls-native-certs` is therefore only a dependency on non-Android
+  targets.
 - `src/transport/morph/policy.rs`: `PreludePolicy` gains `parse_name` and
   `from_url_or_env`, so a URL query value wins over the process environment.
 - `src/transport/morph.rs`, `src/transport/morph/tcp.rs`, `src/transport/morph/udp.rs`: `MorphKeys` carries the TCP and UDP prelude policies
