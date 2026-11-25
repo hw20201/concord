@@ -61,9 +61,10 @@ impl PortalClient {
             let (flow, result) = self.start_quic_flow(&q, kind, target, None).await?;
             return ready_quic_flow(flow, result);
         }
-        let (endpoint, connection) = connect_quic(&self.config, &self.tls)
-            .await
-            .map_err(OpenFlowError::Transport)?;
+        let (endpoint, connection) =
+            connect_quic_with_sockets(&self.config, &self.tls, self.sockets.as_deref())
+                .await
+                .map_err(OpenFlowError::Transport)?;
         let mut exporter = [0; 32];
         connection
             .export_keying_material(&mut exporter, EXPORTER_LABEL, b"")
@@ -142,28 +143,58 @@ pub(crate) async fn connect_quic(
     config: &PortalClientConfig,
     tls: &ClientTls,
 ) -> Result<(quinn::Endpoint, quinn::Connection)> {
+    connect_quic_with_sockets(config, tls, None).await
+}
+
+// Concord: injected sockets retain the host's routing and VPN protection before QUIC starts.
+async fn connect_quic_with_sockets(
+    config: &PortalClientConfig,
+    tls: &ClientTls,
+    sockets: Option<&dyn super::ClientSockets>,
+) -> Result<(quinn::Endpoint, quinn::Connection)> {
     let remote = config.udp_endpoint().context("QUIC endpoint missing")?;
-    let resolved = timeout(
-        config.handshake_timeout,
-        tokio::net::lookup_host((config.host(), remote.port)),
-    )
-    .await
-    .context("Portal DNS timeout")??;
-    let addresses =
-        crate::common::filter_addrs_for_family(resolved, &config.dial_policy, remote.family);
+    let resolved = if sockets.is_some() {
+        vec![std::net::SocketAddr::new(
+            config
+                .host()
+                .parse()
+                .context("injected client sockets require a resolved portal IP")?,
+            remote.port,
+        )]
+    } else {
+        timeout(
+            config.handshake_timeout,
+            tokio::net::lookup_host((config.host(), remote.port)),
+        )
+        .await
+        .context("Portal DNS timeout")??
+        .collect()
+    };
+    let addresses = crate::common::filter_addrs_for_family(
+        resolved.into_iter(),
+        &config.dial_policy,
+        remote.family,
+    );
     let mut last = anyhow!("Portal DNS returned no address");
     for address in addresses {
         let result = async {
-            let bind = std::net::SocketAddr::new(
-                if address.is_ipv4() {
-                    std::net::Ipv4Addr::UNSPECIFIED.into()
-                } else {
-                    std::net::Ipv6Addr::UNSPECIFIED.into()
-                },
-                0,
-            );
-            let socket = std::net::UdpSocket::bind(bind)?;
-            socket.set_nonblocking(true)?;
+            let socket = if let Some(sockets) = sockets {
+                sockets
+                    .bind_udp(address)
+                    .context("failed to bind injected QUIC UDP socket")?
+            } else {
+                let bind = std::net::SocketAddr::new(
+                    if address.is_ipv4() {
+                        std::net::Ipv4Addr::UNSPECIFIED.into()
+                    } else {
+                        std::net::Ipv6Addr::UNSPECIFIED.into()
+                    },
+                    0,
+                );
+                let socket = std::net::UdpSocket::bind(bind)?;
+                socket.set_nonblocking(true)?;
+                socket
+            };
             let runtime = quinn::default_runtime().context("QUIC runtime missing")?;
             let socket = crate::transport::wrap_morph_client_udp_socket(
                 socket,

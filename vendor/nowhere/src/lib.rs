@@ -26,8 +26,8 @@ pub use toolbox::{
 pub use transport::Stats;
 pub use vector::Vector;
 pub use vector::{
-    OpenFlowError, PortalClient, PortalClientConfig, ReceivedUdpPacket, TcpTunnel, UdpTunnel,
-    UdpTunnelReceiver, UdpTunnelSender, fetch_certificate_fingerprint,
+    ClientSockets, OpenFlowError, PortalClient, PortalClientConfig, ReceivedUdpPacket, TcpTunnel,
+    UdpTunnel, UdpTunnelReceiver, UdpTunnelSender, fetch_certificate_fingerprint,
 };
 
 #[cfg(test)]

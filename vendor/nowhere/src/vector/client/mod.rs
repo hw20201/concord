@@ -4,6 +4,10 @@
 //! Vector client state, TLS flow setup, and bounded connection shutdown.
 
 mod quic;
+// Concord: the embedding host supplies carrier sockets before protocol wrapping.
+mod sockets;
+
+pub use self::sockets::ClientSockets;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,6 +42,8 @@ pub struct PortalClient {
     udp_queue_bytes: usize,
     quic: Mutex<Option<(quinn::Endpoint, Arc<QuicConnection>)>>,
     pub(super) shutdown: CancellationToken,
+    // Concord: `None` preserves standalone dialing; embedded clients never fall back.
+    sockets: Option<Arc<dyn ClientSockets>>,
 }
 
 pub(crate) struct QuicFlow {
@@ -60,6 +66,27 @@ impl PortalClient {
         account_stats: bool,
         shutdown: CancellationToken,
     ) -> Result<Arc<Self>> {
+        Self::build(
+            config,
+            credentials,
+            udp_queue_bytes,
+            stats,
+            account_stats,
+            shutdown,
+            None,
+        )
+    }
+
+    // Concord: one constructor owns setup for standalone and injected clients.
+    fn build(
+        config: PortalClientConfig,
+        credentials: &Credentials,
+        udp_queue_bytes: usize,
+        stats: Arc<Stats>,
+        account_stats: bool,
+        shutdown: CancellationToken,
+        sockets: Option<Arc<dyn ClientSockets>>,
+    ) -> Result<Arc<Self>> {
         crate::common::validate_timeout_env()?;
         let tls = ClientTls::new(&config)?;
         let setup_timeout = config.setup_timeout;
@@ -75,6 +102,7 @@ impl PortalClient {
             udp_queue_bytes,
             quic: Mutex::new(None),
             shutdown,
+            sockets,
         }))
     }
 
@@ -86,10 +114,40 @@ impl PortalClient {
         stats: Arc<Stats>,
         shutdown: CancellationToken,
     ) -> Result<Arc<Self>> {
+        Self::from_url_inner(url, stats, shutdown, None)
+    }
+
+    // Concord: injected clients use a resolved portal IP and the host's socket policy.
+    pub fn from_url_with_sockets(
+        url: &Url,
+        stats: Arc<Stats>,
+        shutdown: CancellationToken,
+        sockets: Arc<dyn ClientSockets>,
+    ) -> Result<Arc<Self>> {
+        Self::from_url_inner(url, stats, shutdown, Some(sockets))
+    }
+
+    fn from_url_inner(
+        url: &Url,
+        stats: Arc<Stats>,
+        shutdown: CancellationToken,
+        sockets: Option<Arc<dyn ClientSockets>>,
+    ) -> Result<Arc<Self>> {
         let (config, credentials) = PortalClientConfig::from_probe_url(url)?;
+        if sockets.is_some() && config.host().parse::<std::net::IpAddr>().is_err() {
+            bail!("injected client sockets require a resolved portal IP");
+        }
         let udp_queue_bytes =
             crate::common::read_quic_udp_queue_bytes(&mut crate::common::env_value)?;
-        Self::new(config, &credentials, udp_queue_bytes, stats, true, shutdown)
+        Self::build(
+            config,
+            &credentials,
+            udp_queue_bytes,
+            stats,
+            true,
+            shutdown,
+            sockets,
+        )
     }
 
     // Concord: public so Concord's proxy crate can open TCP flows.
@@ -155,10 +213,11 @@ impl PortalClient {
         let endpoint = self.config.tcp_endpoint().context("TLS endpoint missing")?;
         let (stream, exporter) = self
             .tls
-            .connect_tcp(
+            .connect_tcp_with_sockets(
                 &self.config.remote.carrier_addr(endpoint),
                 &self.config.dial_policy,
                 endpoint.family,
+                self.sockets.as_deref(),
             )
             .await?;
         let (reader, mut writer) = tokio::io::split(stream);

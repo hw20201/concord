@@ -302,22 +302,33 @@ path dependency and the crate builds under the workspace's profiles.
   re-exported at the crate root (`Credentials`, `Target`, `Carrier`, `FlowKind`, `SetupResult`,
   `ALPN`, `Stats`, `PortalClient`, `PortalClientConfig`, `TcpTunnel`, `UdpTunnel`,
   `UdpTunnelSender`, `UdpTunnelReceiver`, `ReceivedUdpPacket`, `OpenFlowError`,
-  `fetch_certificate_fingerprint`).
+  `ClientSockets`, `fetch_certificate_fingerprint`).
 - `src/vector/mod.rs`: `client` becomes `pub mod`, and the client-surface re-exports become
   `pub use`; `BoxReader`, `BoxWriter` and `TcpTunnelGuard` stay crate-visible.
   `fetch_certificate_fingerprint` is public so Concord can read a leaf
   certificate's fingerprint for the `pin=` workflow.
-- `src/vector/client/mod.rs`: `PortalClient`, `new`, `open_tcp` and `close` become public, and
-  two constructors are added: `from_url`, which builds a client from a `vector://` URL mirroring
-  the client construction in `VectorRuntime::build`, and `open_udp`, the method form of
-  `udp_flow::open_udp` (taking `&Arc<Self>` like `open_tcp`).
+- `src/vector/client/mod.rs`: `PortalClient`, `new`, `open_tcp` and `close` become public;
+  `from_url` builds a client from a `vector://` URL mirroring the construction in
+  `VectorRuntime::build`, and `open_udp` is the method form of `udp_flow::open_udp`
+  (taking `&Arc<Self>` like `open_tcp`). `from_url_with_sockets` accepts a resolved
+  portal IP and an owned `ClientSockets` provider for both carriers; the original
+  constructors keep standalone system dialing. An injected provider's errors propagate
+  without a fallback to system sockets.
+- `src/vector/client/sockets.rs`: the object-safe `ClientSockets` trait lets an embedding
+  host create a connected Tokio TCP stream or an unconnected, nonblocking std UDP
+  socket before Morph/TLS/QUIC wraps it, preserving host routing and VPN protection.
+- `src/vector/client/quic.rs`: embedded clients bind through that provider and wrap its
+  existing UDP socket in Morph/Quinn; the standalone `connect_quic` entry point keeps
+  system resolution and binding.
 - `src/vector/config.rs`: `PortalClientConfig`, `from_probe_url` and `endpoint()` become public;
   the struct's fields stay crate-visible. The `vector://` URL gains Concord-only
   query values: `handshake-timeout` and `setup-timeout` in milliseconds (0 leaves
   the default in place, anything else must stay within 0..=300000) and
   `tcp-prelude`/`udp-prelude` (`fade`, `full8` or `low7`); the setup timeout is
   carried on the config into `PortalClient::new`.
-- `src/vector/tls.rs`: `fetch_certificate_fingerprint` becomes public.
+- `src/vector/tls.rs`: `fetch_certificate_fingerprint` becomes public. An injected TCP
+  path accepts the host provider's connected stream before the existing Morph/TLS
+  handshake; standalone dialing and the Egress keepalive entry point stay unchanged.
 - `src/vector/tls.rs`, `Cargo.toml`: `ClientTls::new` loads system roots
   through a Concord `load_system_roots()` instead of `rustls-native-certs`
   directly. On Android it reads `/system/etc/security/cacerts` and

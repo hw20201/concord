@@ -31,7 +31,7 @@ use self::config::VectorConfig;
 // Concord: the client-surface items are public; `BoxReader`, `BoxWriter` and
 // `TcpTunnelGuard` stay crate-visible, and the split halves are exposed only through
 // `TcpTunnel`'s `AsyncRead`/`AsyncWrite` implementations.
-pub use self::client::PortalClient;
+pub use self::client::{ClientSockets, PortalClient};
 pub use self::config::PortalClientConfig;
 pub(crate) use self::flow::{BoxReader, BoxWriter, TcpTunnelGuard};
 pub use self::flow::{OpenFlowError, TcpTunnel};

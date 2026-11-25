@@ -1,17 +1,22 @@
 mod packet;
+#[cfg(test)]
+#[path = "tests/sockets.rs"]
+mod socket_tests;
 mod stream;
 #[cfg(test)]
 mod tests;
 
+use std::future::Future;
 use std::io;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use concord_common::{
     Address, BoxStream, DialCx, IpVersion, Outbound, OutboundInfo, OutboundKind, PacketSession,
-    Tasks,
+    SockOpts, SocketFactory, Tasks,
 };
 use concord_config::proxy::{NowhereOpts, ProxyDef};
 use nowhere::{OpenFlowError, PortalClient, Stats, Target};
@@ -30,13 +35,10 @@ const SHUTDOWN_DRAIN: Duration = Duration::from_secs(5);
 
 /// One Nowhere node: a lazily built `PortalClient` shared by its flows.
 ///
-/// The client is built on the first dial, once the portal host has been
-/// resolved through Concord's DNS: the vendored client dials with its own
-/// sockets, so handing it a hostname would resolve through the system
-/// resolver instead, skipping `protect()` and the configured nameserver.
-/// The resolved address is baked into the URL as an IP literal and the SNI
-/// rides in the query, so TLS still verifies the configured name. A reset
-/// drops the client; the next dial resolves and builds a fresh one.
+/// The client is built on the first dial, with the portal host resolved through
+/// Concord's DNS and carrier sockets opened through the session's socket factory.
+/// The URL carries the resolved IP and preserves the configured TLS name in SNI.
+/// A reset drops the client; the next dial resolves and builds a fresh one.
 pub(crate) struct Nowhere {
     info: OutboundInfo,
     opts: NowhereOpts,
@@ -44,6 +46,28 @@ pub(crate) struct Nowhere {
     stats: Arc<Stats>,
     client: Arc<Mutex<Option<Arc<PortalClient>>>>,
     tasks: Tasks,
+}
+
+struct NowhereSockets {
+    sockets: Arc<dyn SocketFactory>,
+    opts: SockOpts,
+}
+
+impl nowhere::ClientSockets for NowhereSockets {
+    fn connect_tcp(
+        &self,
+        peer: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = io::Result<tokio::net::TcpStream>> + Send + '_>> {
+        self.sockets.connect_tcp(peer, &self.opts)
+    }
+
+    fn bind_udp(&self, peer: SocketAddr) -> io::Result<std::net::UdpSocket> {
+        let opts = SockOpts {
+            tunnel_udp_buffers: true,
+            ..self.opts.clone()
+        };
+        self.sockets.bind_udp(peer.ip(), &opts)?.into_std()
+    }
 }
 
 impl Nowhere {
@@ -60,10 +84,14 @@ impl Nowhere {
         .await?;
         let url = vector_url(&self.opts, &resolved.ip().to_string());
         let parsed = Url::parse(&url).map_err(io::Error::other)?;
-        let client = PortalClient::from_url(
+        let client = PortalClient::from_url_with_sockets(
             &parsed,
             self.stats.clone(),
             tokio_util::sync::CancellationToken::new(),
+            Arc::new(NowhereSockets {
+                sockets: cx.env.sockets.clone(),
+                opts: cx.env.sock_opts.clone(),
+            }),
         )
         .map_err(io::Error::other)?;
         *slot = Some(client.clone());

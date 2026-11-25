@@ -29,6 +29,7 @@ use crate::common::{AddressFamily, certificate_sha256, dial_tcp_with_policy};
 use crate::protocol::{ALPN, TLS_EXPORTER_LEN, TlsExporter};
 use crate::transport::{ClientPrelude, MorphKeys, MorphTcpStream};
 
+use super::client::ClientSockets;
 use super::config::PortalClientConfig;
 
 pub(crate) use crate::protocol::AUTH_EXPORTER_LABEL as EXPORTER_LABEL;
@@ -119,9 +120,45 @@ impl ClientTls {
         family: AddressFamily,
         keepalive: Option<&TcpKeepalive>,
     ) -> Result<(TlsStream<MorphTcpStream<TcpStream>>, TlsExporter)> {
-        let stream = dial_tcp_with_policy(dial_policy, endpoint, self.handshake_timeout, family)
+        self.connect_tcp_inner(endpoint, dial_policy, family, keepalive, None)
             .await
-            .with_context(|| format!("vector::tls::connect_tcp: failed to dial {endpoint}"))?;
+    }
+
+    // Concord: injected sockets are already routed/protected before any carrier bytes.
+    pub(crate) async fn connect_tcp_with_sockets(
+        &self,
+        endpoint: &str,
+        dial_policy: &crate::common::DialPolicy,
+        family: AddressFamily,
+        sockets: Option<&dyn ClientSockets>,
+    ) -> Result<(TlsStream<MorphTcpStream<TcpStream>>, TlsExporter)> {
+        self.connect_tcp_inner(endpoint, dial_policy, family, None, sockets)
+            .await
+    }
+
+    async fn connect_tcp_inner(
+        &self,
+        endpoint: &str,
+        dial_policy: &crate::common::DialPolicy,
+        family: AddressFamily,
+        keepalive: Option<&TcpKeepalive>,
+        sockets: Option<&dyn ClientSockets>,
+    ) -> Result<(TlsStream<MorphTcpStream<TcpStream>>, TlsExporter)> {
+        let stream = if let Some(sockets) = sockets {
+            let peer = endpoint
+                .parse::<std::net::SocketAddr>()
+                .context("injected client sockets require a resolved TCP endpoint")?;
+            if !dial_policy.accepts(peer.ip()) || !family.accepts(peer.ip()) {
+                bail!("TCP endpoint does not match configured address family");
+            }
+            timeout(self.handshake_timeout, sockets.connect_tcp(peer))
+                .await
+                .context("TCP dial timeout")?
+                .map_err(anyhow::Error::from)
+        } else {
+            dial_tcp_with_policy(dial_policy, endpoint, self.handshake_timeout, family).await
+        }
+        .with_context(|| format!("vector::tls::connect_tcp: failed to dial {endpoint}"))?;
         stream
             .set_nodelay(true)
             .context("vector::tls::connect_tcp: failed to set TCP_NODELAY")?;
