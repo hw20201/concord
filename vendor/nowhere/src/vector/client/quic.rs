@@ -58,8 +58,8 @@ impl PortalClient {
             .map(|(_, q)| q.clone())
         {
             drop(state);
-            let (flow, result) = self.start_quic_flow(&q, kind, target, None).await?;
-            return ready_quic_flow(flow, result);
+            let flow = self.start_quic_flow(&q, kind, target, None).await?;
+            return ready_quic_flow(&q, flow).await;
         }
         let (endpoint, connection) =
             connect_quic_with_sockets(&self.config, &self.tls, self.sockets.as_deref())
@@ -72,11 +72,7 @@ impl PortalClient {
         let auth = encode_auth_frame(self.credentials.vector_key, AuthTransport::Quic, &exporter);
         let q = QuicConnection::new(connection, false, self.udp_queue_bytes);
         let mut attempt = ConnectionAttempt(Some(q.clone()));
-        let (flow, result) = self.start_quic_flow(&q, kind, target, Some(auth)).await?;
-        let limits =
-            crate::transport::transport_flow_control().map_err(OpenFlowError::Transport)?;
-        q.connection
-            .set_receive_window(limits.connection_receive_window.into());
+        let flow = self.start_quic_flow(&q, kind, target, Some(auth)).await?;
         let monitor = q.clone();
         tokio::spawn(async move {
             if monitor.connection.accept_bi().await.is_ok() {
@@ -85,9 +81,12 @@ impl PortalClient {
                     .close(1u32.into(), b"role direction violation");
             }
         });
-        *state = Some((endpoint, q));
+        // Concord: stream 0 owns auth, but its target dial must not serialize other flows.
+        // Publish only after its complete request is queued; earlier failures still close q.
+        *state = Some((endpoint, q.clone()));
         attempt.0 = None;
-        ready_quic_flow(flow, result)
+        drop(state);
+        ready_quic_flow(&q, flow).await
     }
 
     async fn start_quic_flow(
@@ -96,8 +95,8 @@ impl PortalClient {
         kind: FlowKind,
         target: &Target,
         auth: Option<[u8; 16]>,
-    ) -> std::result::Result<(QuicFlow, SetupResult), OpenFlowError> {
-        let (mut send, mut recv) = timeout(self.config.handshake_timeout, q.connection.open_bi())
+    ) -> std::result::Result<QuicFlow, OpenFlowError> {
+        let (mut send, recv) = timeout(self.config.handshake_timeout, q.connection.open_bi())
             .await
             .map_err(|e| OpenFlowError::Transport(e.into()))?
             .map_err(|e| OpenFlowError::Transport(e.into()))?;
@@ -121,17 +120,23 @@ impl PortalClient {
         send.write_all(&bytes[..prefix + size])
             .await
             .map_err(|e| OpenFlowError::Transport(e.into()))?;
-        let result = crate::protocol::read_flow_result(&mut recv)
-            .await
-            .map_err(OpenFlowError::Protocol)?;
-        Ok((QuicFlow { send, recv, udp }, SetupResult::from(result)))
+        Ok(QuicFlow { send, recv, udp })
     }
 }
 
-fn ready_quic_flow(
-    flow: QuicFlow,
-    result: SetupResult,
+// Concord: any valid target result proves Portal processed auth, even if stream 0 was
+// cancelled. Reapplying the same window is idempotent and keeps bootstrap credit bounded.
+async fn ready_quic_flow(
+    q: &Arc<QuicConnection>,
+    mut flow: QuicFlow,
 ) -> std::result::Result<QuicFlow, OpenFlowError> {
+    let result = crate::protocol::read_flow_result(&mut flow.recv)
+        .await
+        .map_err(OpenFlowError::Protocol)?;
+    let limits = crate::transport::transport_flow_control().map_err(OpenFlowError::Transport)?;
+    q.connection
+        .set_receive_window(limits.connection_receive_window.into());
+    let result = SetupResult::from(result);
     if result == SetupResult::Ready {
         Ok(flow)
     } else {

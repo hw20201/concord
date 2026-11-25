@@ -103,7 +103,8 @@ async fn close_deadline_bounds_a_suspended_first_flow() {
     })
     .await
     .unwrap();
-    assert!(client.quic.try_lock().is_err());
+    // Concord: the request is published before its target result, so close owns the cache.
+    assert!(client.quic.try_lock().unwrap().is_some());
     timeout(
         std::time::Duration::from_secs(1),
         client.close(Instant::now() + std::time::Duration::from_millis(20)),
@@ -120,7 +121,7 @@ async fn close_deadline_bounds_a_suspended_first_flow() {
 }
 
 #[tokio::test]
-async fn cancelling_the_first_udp_setup_closes_the_temporary_connection() {
+async fn shutdown_of_the_first_udp_setup_closes_the_published_connection() {
     let (endpoint, client) = quic_fixture();
     let opening = client.clone();
     let task = tokio::spawn(async move {

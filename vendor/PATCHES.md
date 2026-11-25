@@ -319,7 +319,24 @@ path dependency and the crate builds under the workspace's profiles.
   socket before Morph/TLS/QUIC wraps it, preserving host routing and VPN protection.
 - `src/vector/client/quic.rs`: embedded clients bind through that provider and wrap its
   existing UDP socket in Morph/Quinn; the standalone `connect_quic` entry point keeps
-  system resolution and binding.
+  system resolution and binding. After stream 0's complete auth and first request are
+  queued, publish the connection and release the cache lock before waiting for that
+  target's result: Portal already accepts later flows concurrently after verifying auth.
+  Pre-publication failures still close the temporary connection; a published flow's
+  cancellation, timeout or target rejection only releases that flow, while closed or
+  draining connections are excluded from reuse and client shutdown closes the cache.
+  Bootstrap receive credit stays at 64 KiB until a valid result on any flow (including
+  target rejection) permits the existing profile window. Reapplying that same window
+  after each valid result is idempotent, so a cancelled first flow cannot strand a reused
+  connection at bootstrap credit. Window values, TLS and socket policy are unchanged.
+- `src/tests/vector/client/quic.rs`, `src/tests/vector/client/mod.rs`, `src/tests/vector/client/deadlines.rs`:
+  oneshot-gated regressions hold the first target result while a second target completes
+  on stream 4 of the same connection; auth appears only on stream 0, with no warmup flow
+  or extra handshake. A 128 KiB response must be acknowledged before application reads,
+  proving a later valid result can lift bootstrap credit. First-flow rejection,
+  cancellation and timeout release UDP routes without losing the published connection;
+  transport failure requires a fresh authenticated connection, and shutdown still closes
+  the cached connection within its deadline.
 - `src/vector/config.rs`: `PortalClientConfig`, `from_probe_url` and `endpoint()` become public;
   the struct's fields stay crate-visible. The `vector://` URL gains Concord-only
   query values: `handshake-timeout` and `setup-timeout` in milliseconds (0 leaves

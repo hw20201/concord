@@ -5,6 +5,238 @@
 
 use super::*;
 
+// Concord: gate the first target result so connection reuse cannot depend on its dial.
+#[tokio::test]
+async fn pending_first_flow_does_not_block_a_second_target_on_the_same_connection() {
+    for first_kind in [FlowKind::Tcp, FlowKind::Udp] {
+        for first_result in [SetupResult::Ready, SetupResult::DialFailed] {
+            timeout(Duration::from_secs(3), async {
+                let (endpoint, client) = quic_fixture();
+                let peer_endpoint = endpoint.clone();
+                let credentials = client.credentials.clone();
+                let second_target = Target::domain("example.net", 443).unwrap();
+                let expected = second_target.clone();
+                let (seen, first_seen) = tokio::sync::oneshot::channel();
+                let (buffered, body_buffered) = tokio::sync::oneshot::channel();
+                let (release, released) = tokio::sync::oneshot::channel();
+                let peer = tokio::spawn(async move {
+                    let connection = peer_endpoint.accept().await.unwrap().await.unwrap();
+                    let (mut first_send, first_recv, kind) =
+                        read_first_request(&connection, &credentials).await;
+                    assert_eq!(u64::from(first_recv.id()), 0);
+                    assert_eq!(kind, first_kind);
+                    seen.send(()).unwrap();
+                    let (mut send, mut recv) = tokio::select! {
+                        streams = connection.accept_bi() => streams.unwrap(),
+                        _ = peer_endpoint.accept() => panic!("second target opened another connection"),
+                    };
+                    assert_eq!(u64::from(recv.id()), 4);
+                    assert_eq!(
+                        crate::protocol::read_flow_start(&mut recv).await.unwrap(),
+                        Some(FlowKind::Tcp)
+                    );
+                    assert_eq!(read_request(&mut recv).await.unwrap(), expected);
+                    write_flow_result(&mut send, FlowResult::Ready)
+                        .await
+                        .unwrap();
+                    // Concord: ACK more than bootstrap credit before the caller reads payload.
+                    send.write_all(&vec![42; 128 * 1024]).await.unwrap();
+                    send.finish().unwrap();
+                    assert_eq!(send.stopped().await.unwrap(), None);
+                    buffered.send(()).unwrap();
+                    tokio::select! {
+                        biased;
+                        _ = peer_endpoint.accept() => panic!("unexpected extra handshake"),
+                        _ = connection.accept_bi() => panic!("unexpected extra flow"),
+                        result = released => result.unwrap(),
+                    }
+                    write_flow_result(&mut first_send, first_result.into())
+                        .await
+                        .unwrap();
+                    first_send.finish().unwrap();
+                    tokio::select! {
+                        biased;
+                        _ = peer_endpoint.accept() => panic!("unexpected extra handshake"),
+                        streams = connection.accept_bi() => assert!(streams.is_err(), "unexpected extra flow"),
+                        _ = connection.closed() => {},
+                    }
+                });
+                let opening = client.clone();
+                let first = tokio::spawn(async move {
+                    opening
+                        .open_quic_flow(first_kind, &Target::domain("example.com", 53).unwrap())
+                        .await
+                });
+                first_seen.await.unwrap();
+                let mut second = client
+                    .open_quic_flow(FlowKind::Tcp, &second_target)
+                    .await
+                    .unwrap();
+                assert_eq!(u64::from(second.send.id()), 4);
+                body_buffered.await.unwrap();
+                assert_eq!(
+                    second.recv.read_to_end(128 * 1024).await.unwrap(),
+                    vec![42; 128 * 1024]
+                );
+                assert!(!first.is_finished(), "first target completed before its result was released");
+                let cached = client.quic.lock().await.as_ref().unwrap().1.clone();
+                release.send(()).unwrap();
+                match (first_result, first.await.unwrap()) {
+                    (SetupResult::Ready, Ok(flow)) => drop(flow),
+                    (expected, Err(OpenFlowError::Setup(actual))) => assert_eq!(actual, expected),
+                    (_, result) => panic!("unexpected first-flow outcome: {:?}", result.err()),
+                }
+                if first_kind == FlowKind::Udp {
+                    drop(cached.register(1).expect("first flow retained its UDP route"));
+                }
+                assert!(Arc::ptr_eq(
+                    &client.quic.lock().await.as_ref().unwrap().1,
+                    &cached
+                ));
+                drop(second);
+                client.close(Instant::now() + Duration::from_secs(1)).await;
+                peer.await.unwrap();
+                endpoint.wait_idle().await;
+            })
+            .await
+            .expect("second target waited for the first target result");
+        }
+    }
+}
+
+// Concord: cancelling a published first flow releases only that stream and its UDP route.
+#[tokio::test]
+async fn cancelling_a_pending_first_flow_preserves_the_connection_for_a_second_target() {
+    timeout(Duration::from_secs(3), async {
+        let (endpoint, client) = quic_fixture();
+        let peer_endpoint = endpoint.clone();
+        let credentials = client.credentials.clone();
+        let (seen, first_seen) = tokio::sync::oneshot::channel();
+        let (buffered, body_buffered) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let connection = peer_endpoint.accept().await.unwrap().await.unwrap();
+            let (first_send, mut first_recv, kind) =
+                read_first_request(&connection, &credentials).await;
+            assert_eq!(u64::from(first_recv.id()), 0);
+            assert_eq!(kind, FlowKind::Udp);
+            seen.send(()).unwrap();
+            let _ = first_recv.read_to_end(0).await;
+            drop((first_send, first_recv));
+            let (mut send, mut recv) = tokio::select! {
+                streams = connection.accept_bi() => streams.unwrap(),
+                _ = peer_endpoint.accept() => panic!("cancelled first flow forced a new handshake"),
+            };
+            assert_eq!(u64::from(recv.id()), 4);
+            assert_eq!(
+                crate::protocol::read_flow_start(&mut recv).await.unwrap(),
+                Some(FlowKind::Tcp)
+            );
+            assert_eq!(
+                read_request(&mut recv).await.unwrap(),
+                Target::domain("example.net", 443).unwrap()
+            );
+            write_flow_result(&mut send, FlowResult::Ready)
+                .await
+                .unwrap();
+            send.write_all(&vec![42; 128 * 1024]).await.unwrap();
+            send.finish().unwrap();
+            assert_eq!(send.stopped().await.unwrap(), None);
+            buffered.send(()).unwrap();
+            connection.closed().await;
+        });
+        let opening = client.clone();
+        let first = tokio::spawn(async move {
+            opening
+                .open_quic_flow(FlowKind::Udp, &Target::domain("example.com", 53).unwrap())
+                .await
+        });
+        first_seen.await.unwrap();
+        let cached = client.quic.lock().await.as_ref().unwrap().1.clone();
+        first.abort();
+        assert!(matches!(first.await, Err(error) if error.is_cancelled()));
+        drop(
+            cached
+                .register(1)
+                .expect("cancelled first flow retained its UDP route"),
+        );
+        let mut flow = client
+            .open_quic_flow(FlowKind::Tcp, &Target::domain("example.net", 443).unwrap())
+            .await
+            .unwrap();
+        body_buffered.await.unwrap();
+        assert_eq!(
+            flow.recv.read_to_end(128 * 1024).await.unwrap(),
+            vec![42; 128 * 1024]
+        );
+        assert!(!cached.cancel.is_cancelled());
+        assert!(Arc::ptr_eq(
+            &client.quic.lock().await.as_ref().unwrap().1,
+            &cached
+        ));
+        drop(flow);
+        client.close(Instant::now() + Duration::from_secs(1)).await;
+        peer.await.unwrap();
+        endpoint.wait_idle().await;
+    })
+    .await
+    .expect("cancelled first flow prevented connection reuse");
+}
+
+// Concord: a transport-level failure must never reuse the published but dead connection.
+#[tokio::test]
+async fn connection_failure_during_the_first_result_requires_fresh_authentication() {
+    timeout(Duration::from_secs(3), async {
+        let (endpoint, client) = quic_fixture();
+        let peer_endpoint = endpoint.clone();
+        let credentials = client.credentials.clone();
+        let (seen, first_seen) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let first = peer_endpoint.accept().await.unwrap().await.unwrap();
+            let (_send, recv, _) = read_first_request(&first, &credentials).await;
+            assert_eq!(u64::from(recv.id()), 0);
+            seen.send(()).unwrap();
+            released.await.unwrap();
+            first.close(1u32.into(), b"transport failed");
+            let next = peer_endpoint.accept().await.unwrap().await.unwrap();
+            let (mut send, recv, kind) = read_first_request(&next, &credentials).await;
+            assert_eq!(u64::from(recv.id()), 0);
+            assert_eq!(kind, FlowKind::Udp);
+            write_flow_result(&mut send, FlowResult::Ready)
+                .await
+                .unwrap();
+            send.finish().unwrap();
+            next.closed().await;
+        });
+        let opening = client.clone();
+        let first = tokio::spawn(async move {
+            opening
+                .open_quic_flow(FlowKind::Udp, &Target::domain("example.com", 53).unwrap())
+                .await
+        });
+        first_seen.await.unwrap();
+        let stale = client.quic.lock().await.as_ref().unwrap().1.clone();
+        release.send(()).unwrap();
+        assert!(first.await.unwrap().is_err());
+        let flow = client
+            .open_quic_flow(FlowKind::Udp, &Target::domain("example.com", 53).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(u64::from(flow.send.id()), 0);
+        assert!(stale.connection.close_reason().is_some());
+        assert!(!Arc::ptr_eq(
+            &client.quic.lock().await.as_ref().unwrap().1,
+            &stale
+        ));
+        drop(flow);
+        client.close(Instant::now() + Duration::from_secs(1)).await;
+        peer.await.unwrap();
+        endpoint.wait_idle().await;
+    })
+    .await
+    .expect("dead first connection prevented fresh authentication");
+}
+
 #[tokio::test]
 async fn rejected_udp_setup_releases_its_route_and_reuses_the_authenticated_connection_concurrently()
  {

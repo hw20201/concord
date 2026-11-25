@@ -120,8 +120,42 @@ async fn first_quic_timeout_releases_connection_cache_lock_and_udp_route() {
                 .err()
                 .unwrap(),
         );
-        assert!(client.quic.try_lock().unwrap().is_none());
+        // Concord: a target timeout drops its flow, not the already published connection.
+        let cached = client.quic.try_lock().unwrap().as_ref().unwrap().1.clone();
+        assert!(!cached.cancel.is_cancelled());
+        if kind == FlowKind::Udp {
+            drop(
+                cached
+                    .register(1)
+                    .expect("timed-out first flow retained its UDP route"),
+            );
+        }
+        let target = Target::domain("example.com", 53).unwrap();
+        let (next, ()) = timeout(Duration::from_secs(1), async {
+            tokio::join!(client.open_quic_flow(kind, &target), async {
+                let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+                assert_eq!(u64::from(recv.id()), 4);
+                assert_eq!(
+                    crate::protocol::read_flow_start(&mut recv).await.unwrap(),
+                    Some(kind)
+                );
+                assert_eq!(read_request(&mut recv).await.unwrap(), target);
+                write_flow_result(&mut send, FlowResult::Ready)
+                    .await
+                    .unwrap();
+                send.finish().unwrap();
+            })
+        })
+        .await
+        .expect("first-flow timeout prevented connection reuse");
+        drop(next.unwrap());
+        assert!(Arc::ptr_eq(
+            &client.quic.lock().await.as_ref().unwrap().1,
+            &cached
+        ));
         assert_eq!(client.stats.udp_active.load(Ordering::Relaxed), 0);
+        client.close(Instant::now() + Duration::from_secs(1)).await;
+        assert!(client.quic.lock().await.is_none());
         timeout(Duration::from_secs(1), connection.closed())
             .await
             .unwrap();
