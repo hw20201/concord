@@ -694,6 +694,15 @@ fn parse_nowhere(f: &mut Fields<'_>) -> R<NowhereOpts> {
         )));
     }
     let morph = f.opt_bool("morph")?.unwrap_or(true);
+    let cipher = match f.opt_string("cipher")?.as_deref() {
+        None | Some("chacha") => NowhereCipher::ChaCha,
+        Some("aes") => NowhereCipher::Aes128Ctr,
+        Some(_) => {
+            return Err(Fail::Hard(ConfigError::new(
+                "nowhere: cipher must be chacha or aes",
+            )));
+        }
+    };
     let tcp_prelude = prelude(f, "tcp-prelude")?;
     let udp_prelude = prelude(f, "udp-prelude")?;
     let handshake_timeout = timeout_ms(f, "handshake-timeout")?;
@@ -723,6 +732,7 @@ fn parse_nowhere(f: &mut Fields<'_>) -> R<NowhereOpts> {
         sni,
         pin,
         morph,
+        cipher,
         tcp_prelude,
         udp_prelude,
         handshake_timeout,

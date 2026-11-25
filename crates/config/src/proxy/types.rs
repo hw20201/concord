@@ -437,6 +437,24 @@ pub struct AnyTlsOpts {
     pub disable_reuse: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NowhereCipher {
+    #[default]
+    ChaCha,
+    Aes128Ctr,
+}
+
+impl NowhereCipher {
+    pub const ALL: [Self; 2] = [Self::ChaCha, Self::Aes128Ctr];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ChaCha => "chacha",
+            Self::Aes128Ctr => "aes",
+        }
+    }
+}
+
 /// Nowhere (NW3): the TLS carrier is always on with the fixed ALPN, and the
 /// certificate is always verified, so there is no `TlsOpts` here; `pin` is the
 /// leaf certificate's SHA-256. Timeouts are milliseconds, 0 leaving the
@@ -451,6 +469,7 @@ pub struct NowhereOpts {
     pub sni: String,
     pub pin: String,
     pub morph: bool,
+    pub cipher: NowhereCipher,
     pub tcp_prelude: String,
     pub udp_prelude: String,
     pub handshake_timeout: u32,

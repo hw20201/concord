@@ -522,6 +522,16 @@ fn nowhere(f: Fields<'_>) -> String {
         return String::new();
     }
     let mut query = Query::new();
+    if f.0
+        .and_then(|map| map.get("cipher"))
+        .is_some_and(|v| !v.is_null())
+    {
+        let cipher = f.str("cipher");
+        if !matches!(cipher.as_str(), "chacha" | "aes") {
+            return String::new();
+        }
+        set(&mut query, "cipher", &cipher);
+    }
     if f.str("network") == "udp" {
         set(&mut query, "net", "udp");
     }

@@ -55,6 +55,14 @@ mihomo; a key that only uses one, such as `copy: *domain`, is still unknown.
 | Picking a dead `fallback` member | Stores the pick, then tests the member; a connection during the test drops the pick (`adapter/outboundgroup/fallback.go:105-145`) | Stores the pick, then tests the member; a connection during the test uses another member, and the pick stays until the test decides |
 | `type: smart` | Not a group type | Reads vernesong/mihomo's `smart` group without its model: a node's score is its probe delay plus the failures real flows met through it, decayed over the group's `interval`; `max-failed-times` failures in a row eject it for a while; each site (its registrable domain) keeps the node that served it for an hour and leaves it only when that node fails it. `policy-priority` (`pattern:factor` pairs separated by `;`, the first matching pair wins) divides a node's delay by its factor, so a factor above 1 prefers the node, the opposite direction to Surge's `policy-priority` |
 
+Nowhere (NW3) nodes select Morph masking with `cipher: chacha` (ChaCha20-IETF, the default) or
+`cipher: aes` (AES-128-CTR). The same selection applies to the TCP/TLS and UDP/QUIC carriers. When Morph
+is enabled, the node and Portal must select the same cipher; they do not negotiate it. Existing nodes
+without `cipher` keep ChaCha20. `morph: false` disables masking while retaining the configured cipher.
+Only the exact tokens `chacha` and `aes` are accepted; an empty or invalid value rejects the profile,
+also when Morph is disabled. Nowhere share links and subscriptions preserve `cipher=chacha` or
+`cipher=aes` through import and export.
+
 TCP JLS does not resume sessions. Its native Hello matches the AES-capable Go jls-tls default
 (the cipher order can differ from Go on CPUs without AES acceleration), including TLS 1.2 in the offer,
 but this handshake engine only completes TLS 1.3 with X25519 or X25519MLKEM768. A peer selecting TLS 1.2,

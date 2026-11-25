@@ -430,6 +430,10 @@
       "cubic",
       "reno",
       "bbr"
+    ],
+    "nowhere.cipher": [
+      "chacha",
+      "aes"
     ]
   },
   "rule-types": {

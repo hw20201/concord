@@ -381,6 +381,60 @@ fn every_tier_is_listed_once() {
 }
 
 #[test]
+fn nowhere_cipher_is_applied_by_the_t0_profile_loader() {
+    use concord_config::proxy::{NowhereCipher, ProxyKind};
+    use serde_json::json;
+
+    let schema = concord_config::config_schema();
+    assert!(
+        schema["proxy-types"]["t0"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "nowhere")
+    );
+    assert_eq!(
+        schema["proxy-values"]["nowhere.cipher"],
+        json!(["chacha", "aes"])
+    );
+    let text = |options: &str| {
+        format!(
+            "proxies: [{{name: n, type: nowhere, server: n.example, port: 443, \
+             password: '0123456789abcdef0123456789abcdef'{options}}}]"
+        )
+    };
+    let base = load_str(&text(""), &LoadOptions::default()).unwrap();
+    let ProxyKind::Nowhere(base_opts) = &base.proxies[0].kind else {
+        panic!("not Nowhere")
+    };
+    assert_eq!(base_opts.cipher, NowhereCipher::ChaCha);
+    for cipher in NowhereCipher::ALL {
+        let changed = load_str(
+            &text(&format!(", cipher: {}", cipher.as_str())),
+            &LoadOptions::default(),
+        )
+        .unwrap();
+        let ProxyKind::Nowhere(opts) = &changed.proxies[0].kind else {
+            panic!("not Nowhere")
+        };
+        assert_eq!(opts.cipher, cipher);
+        assert!(changed.report.warnings.is_empty());
+        assert!(changed.quarantined.is_empty());
+        if cipher == NowhereCipher::Aes128Ctr {
+            assert_ne!(changed.proxies[0], base.proxies[0]);
+        }
+    }
+    for value in ["''", "AES", "aes-128-ctr", "true", "[aes]", "{mode: aes}"] {
+        let error = load_str(
+            &text(&format!(", cipher: {value}")),
+            &LoadOptions::default(),
+        )
+        .unwrap_err();
+        assert!(error.message.contains("cipher"), "{error:?}");
+    }
+}
+
+#[test]
 fn group_health_keys_have_applied_tiers_and_change_typed_definitions() {
     let schema = concord_config::config_schema();
     let text = |options: &str| {

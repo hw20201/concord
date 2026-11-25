@@ -4,7 +4,7 @@ use concord_common::options::{CONGESTION_CONTROLLERS, FindProcessMode, LogLevel,
 
 use crate::dns::{CacheAlgorithm, EnhancedMode, FakeIpFilterMode};
 use crate::keys;
-use crate::proxy::{IP_STACK_MODES, T0_PROXY_TYPES, T1_PROXY_TYPES, T2_PROXY_TYPES};
+use crate::proxy::{IP_STACK_MODES, NowhereCipher, T0_PROXY_TYPES, T1_PROXY_TYPES, T2_PROXY_TYPES};
 use crate::rule::{T0_RULE_TYPES, T1_RULE_TYPES};
 use crate::tun::TUN_STACKS;
 
@@ -78,6 +78,7 @@ pub fn config_schema() -> Value {
         json!({
             "ip-stack.mode": IP_STACK_MODES,
             "ip-stack.congestion-controller": CONGESTION_CONTROLLERS,
+            "nowhere.cipher": names(&NowhereCipher::ALL, NowhereCipher::as_str),
         }),
     );
     schema.insert(

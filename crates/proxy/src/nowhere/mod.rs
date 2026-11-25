@@ -18,7 +18,7 @@ use concord_common::{
     Address, BoxStream, DialCx, IpVersion, Outbound, OutboundInfo, OutboundKind, PacketSession,
     SockOpts, SocketFactory, Tasks,
 };
-use concord_config::proxy::{NowhereOpts, ProxyDef};
+use concord_config::proxy::{NowhereCipher, NowhereOpts, ProxyDef};
 use nowhere::{OpenFlowError, PortalClient, Stats, Target};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
@@ -180,6 +180,9 @@ fn vector_url(opts: &NowhereOpts, host: &str) -> String {
     let mut query = Vec::new();
     if !opts.morph {
         query.push("morph=0".to_string());
+    }
+    if opts.cipher != NowhereCipher::ChaCha {
+        query.push(format!("cipher={}", opts.cipher.as_str()));
     }
     let sni = if opts.sni.is_empty() {
         opts.server.clone()

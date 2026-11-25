@@ -412,6 +412,9 @@ fn decode_line(
                 "morph": link.get("morph") != "0",
                 "udp": true,
             }));
+            if let Some((_, cipher)) = link.query.iter().find(|(key, _)| key == "cipher") {
+                map.insert("cipher".into(), text(cipher));
+            }
             if !link.get("sni").is_empty() {
                 map.insert("sni".into(), text(link.get("sni")));
             }

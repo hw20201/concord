@@ -31,6 +31,7 @@ fn the_url_carries_every_option_only_when_set() {
         sni: "s.example".into(),
         pin: "a".repeat(64),
         morph: false,
+        cipher: NowhereCipher::Aes128Ctr,
         tcp_prelude: "full8".into(),
         udp_prelude: "low7".into(),
         handshake_timeout: 5000,
@@ -40,7 +41,7 @@ fn the_url_carries_every_option_only_when_set() {
     assert_eq!(
         vector_url(&opts, "2001:db8::1"),
         "vector://0123456789abcdef0123456789abcdef@[2001:db8::1]/udp:443\
-         ?morph=0&sni=s.example&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         ?morph=0&cipher=aes&sni=s.example&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
          &tcp-prelude=full8&udp-prelude=low7&handshake-timeout=5000&setup-timeout=10000"
     );
 }
@@ -62,6 +63,38 @@ fn the_url_parses_back_into_a_client_config() {
     let url = Url::parse(&vector_url(&opts(), "203.0.113.9")).unwrap();
     let (config, _) = nowhere::PortalClientConfig::from_probe_url(&url).unwrap();
     assert_eq!(config.endpoint(), "203.0.113.9/tcp:443");
+}
+
+#[test]
+fn imported_cipher_reaches_the_upstream_client_for_both_carriers() {
+    for cipher in NowhereCipher::ALL {
+        for carrier in ["tcp", "udp"] {
+            for morph in [true, false] {
+                let link = format!(
+                    "nowhere://0123456789abcdef0123456789abcdef@n.example:443\
+                     ?net={carrier}&cipher={}&morph={}",
+                    cipher.as_str(),
+                    u8::from(morph)
+                );
+                let mut imported = concord_config::share_link::decode_subscription(&link).unwrap();
+                let proxy = def(serde_json::Value::Object(imported.remove(0)));
+                let ProxyKind::Nowhere(opts) = &proxy.kind else {
+                    panic!("not Nowhere")
+                };
+                assert_eq!(opts.cipher, cipher);
+                assert_eq!(opts.morph, morph);
+                let url = Url::parse(&vector_url(opts, "203.0.113.9")).unwrap();
+                let actual = url
+                    .query_pairs()
+                    .find(|(key, _)| key == "cipher")
+                    .map(|(_, value)| value.into_owned());
+                let expected = (cipher == NowhereCipher::Aes128Ctr).then(|| "aes".to_string());
+                assert_eq!(actual, expected);
+                let (config, _) = nowhere::PortalClientConfig::from_probe_url(&url).unwrap();
+                assert_eq!(config.endpoint(), format!("203.0.113.9/{carrier}:443"));
+            }
+        }
+    }
 }
 
 fn def(value: serde_json::Value) -> ProxyDef {
