@@ -264,6 +264,10 @@ opt-level = 3
 [profile.release.package.concord-group]
 opt-level = 3
 
+# Morph's per-byte cipher generics are instantiated in this crate.
+[profile.release.package.nowhere]
+opt-level = 3
+
 [profile.release.package.quinn]
 opt-level = 3
 
