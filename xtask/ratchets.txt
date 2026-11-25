@@ -22,7 +22,7 @@ fn-lines crates/tls/src/reality/handshake.rs::RealityClient::run 175 raised from
 fn-lines crates/tls/src/reality/hello.rs::build_client_hello 217 raised from 212: native JLS encodes the Go certificate signature-algorithms extension; back down to 120 when extension encoding moves into its own functions
 fn-lines crates/transport/src/gun/frame.rs::Read::poll_read 130
 fn-lines crates/transport/src/ws/frame.rs::poll_step 129
-fn-lines crates/tun/src/route/linux.rs::rules_for 177
+fn-lines crates/tun/src/route/linux.rs::rules 182 raised from 165: the Android chain sends local port 53 to the DNS table in both families
 fn-lines crates/tunnel/src/sniff/http.rs::sniff_http2 122
 string-errors bins/desktop 3
 string-errors crates/group 5

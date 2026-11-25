@@ -1,10 +1,14 @@
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::MetadataExt;
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::time::Duration;
 
-use concord_common::{Network, ProcessInfo};
+use concord_common::Network;
+#[cfg(target_os = "linux")]
+use concord_common::ProcessInfo;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use super::procnet::{self, Match};
@@ -121,6 +125,14 @@ fn sock_diag(network: Network, src: SocketAddr) -> Option<Diag> {
     wildcard
 }
 
+pub fn find_uid(network: Network, src: SocketAddr) -> Option<u32> {
+    match sock_diag(network, src) {
+        Some(diag) => Some(diag.uid),
+        None => procnet::lookup(network, src, Match::Exact).map(|entry| entry.uid),
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn socket_holder(inode: u64, uid: u32) -> Option<String> {
     let needle = format!("socket:[{inode}]");
     for entry in std::fs::read_dir("/proc").ok()?.flatten() {
@@ -150,6 +162,7 @@ fn socket_holder(inode: u64, uid: u32) -> Option<String> {
     None
 }
 
+#[cfg(target_os = "linux")]
 pub fn find(network: Network, src: SocketAddr) -> Option<ProcessInfo> {
     let (uid, inode) = match sock_diag(network, src) {
         Some(diag) => (diag.uid, u64::from(diag.inode)),
@@ -205,6 +218,20 @@ mod tests {
     }
 
     #[test]
+    fn a_listening_socket_belongs_to_this_uid() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let uid = std::fs::metadata("/proc/self").map(|meta| {
+            use std::os::unix::fs::MetadataExt;
+            meta.uid()
+        });
+        assert_eq!(
+            find_uid(Network::Tcp, listener.local_addr().unwrap()),
+            uid.ok()
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
     fn this_process_owns_its_listening_socket() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let info = find(Network::Tcp, listener.local_addr().unwrap()).unwrap();
@@ -218,6 +245,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn a_closed_socket_on_the_same_port_is_not_the_owner() {
         let first = TcpListener::bind("127.0.0.1:0").unwrap();
         let second = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -244,6 +272,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn an_unresolvable_holder_leaves_no_owner() {
         assert_eq!(socket_holder(u64::MAX, u32::MAX), None);
     }
