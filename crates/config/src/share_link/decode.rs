@@ -385,6 +385,41 @@ fn decode_line(
             })));
         }
         "mierus" => decode_mieru(line, names, out),
+        "nowhere" => {
+            let Some(link) = Link::parse(line) else {
+                return;
+            };
+            // The key rides alone in the userinfo and the authority carries no
+            // path: a password segment or a carrier path is not a share link.
+            if link.host.is_empty()
+                || link.port.is_empty()
+                || link.password.is_some()
+                || !link.path.is_empty()
+            {
+                return;
+            }
+            let key = link.username();
+            if key.is_empty() {
+                return;
+            }
+            let mut map = into_map(json!({
+                "name": unique_name(names, if link.fragment.is_empty() { &link.host } else { &link.fragment }),
+                "type": "nowhere",
+                "server": link.host,
+                "port": link.port,
+                "password": key,
+                "network": if link.get("net") == "udp" { "udp" } else { "tcp" },
+                "morph": link.get("morph") != "0",
+                "udp": true,
+            }));
+            if !link.get("sni").is_empty() {
+                map.insert("sni".into(), text(link.get("sni")));
+            }
+            if !link.get("pin").is_empty() {
+                map.insert("pin".into(), text(link.get("pin")));
+            }
+            out.push(map);
+        }
         _ => {}
     }
 }

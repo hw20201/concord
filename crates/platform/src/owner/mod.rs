@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod darwin;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 mod linux;
 #[cfg(any(windows, test))]
 #[cfg_attr(
@@ -33,4 +33,11 @@ pub fn find_owner_blocking(network: Network, src: SocketAddr) -> Option<ProcessI
         let _ = (network, src);
         None
     }
+}
+
+/// The uid that owns a local socket, from the kernel's socket tables. On Android only a root
+/// process may read them.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn find_uid(network: Network, src: SocketAddr) -> Option<u32> {
+    linux::find_uid(network, src)
 }

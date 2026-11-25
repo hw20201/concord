@@ -1,0 +1,57 @@
+[package]
+name = "nowhere"
+version = "3.4.0"
+edition = "2024"
+description = "TCP and UDP relay over TLS and QUIC"
+license = "GPL-3.0-only"
+repository = "https://github.com/NodePassProject/Nowhere"
+readme = "README.md"
+
+[dependencies]
+aes = "0.9.4"
+anyhow = "1.0.104"
+bytes = "1.12.1"
+chacha20 = "0.10.2"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+ctr = "0.10.1"
+getrandom = "0.4.3"
+hmac = "0.13.0"
+humantime = "2.4.0"
+libc = "0.2.191"
+percent-encoding = "2.3.2"
+quinn = { version = "0.11.12", default-features = false, features = ["bloom", "log", "runtime-tokio", "rustls-aws-lc-rs"] }
+quinn-proto = { version = "0.11.19", default-features = false }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "aws_lc_rs"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+socket2 = "0.6.5"
+subtle = "2.6.1"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync", "signal"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs"] }
+tokio-util = "0.7.20"
+url = "2.5.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_System_Pipes",
+] }
+
+# Concord: only non-Android targets load roots through `rustls-native-certs`;
+# Android reads its system stores directly (see `load_system_roots` in
+# `src/vector/tls.rs`), so the crate is not a dependency there.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rustls-native-certs = "0.8.5"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

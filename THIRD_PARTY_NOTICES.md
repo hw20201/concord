@@ -50,8 +50,8 @@ Checked while writing this file:
 ## Dependencies
 
 Rust dependencies are used under their own licences, as declared in each crate. `deny.toml` allows only these:
-0BSD, Apache-2.0 (also with LLVM-exception), BSD-2-Clause, BSD-3-Clause, BSL-1.0, CC0-1.0, GPL-3.0-or-later, ISC, MIT,
-MPL-2.0, Unicode-3.0, Unlicense and Zlib. `cargo deny list` prints the licence of every crate in the build.
+0BSD, Apache-2.0 (also with LLVM-exception), BSD-2-Clause, BSD-3-Clause, BSL-1.0, CC0-1.0, GPL-3.0-only,
+GPL-3.0-or-later, ISC, MIT, MPL-2.0, Unicode-3.0, Unlicense and Zlib. `cargo deny list` prints the licence of every crate in the build.
 
 Dependencies that need a note:
 
@@ -78,6 +78,9 @@ These crates.io releases are copied into `vendor/` with changes and replace the 
 `[patch.crates-io]` in `Cargo.toml`. Each directory keeps the crate's own licence files, each source change carries a
 `Concord:` comment, and `vendor/PATCHES.md` describes every change.
 
+Nowhere is the exception: it is not on crates.io, so it is copied from the NodePassProject/Nowhere v3.4.0 tag and
+wired in as a path dependency (`nowhere = { path = "vendor/nowhere" }`), with no `[patch.crates-io]` entry.
+
 | Crate | Version | Licence |
 |---|---|---|
 | boring | 5.4.0 | Apache-2.0 |
@@ -88,6 +91,7 @@ These crates.io releases are copied into `vendor/` with changes and replace the 
 | rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT |
 | shadowsocks | 1.25.0 | MIT |
 | tun-rs | 2.8.16 | Apache-2.0 |
+| nowhere | 3.4.0 | GPL-3.0-only |
 
 ## Licence texts
 

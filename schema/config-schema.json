@@ -490,6 +490,7 @@
       "hysteria2",
       "tuic",
       "anytls",
+      "nowhere",
       "socks5",
       "http"
     ],

@@ -31,7 +31,7 @@ members = [
     "tools/bench",
     "xtask",
 ]
-exclude = ["vendor/boring", "vendor/h3", "vendor/h2", "vendor/mio", "vendor/quinn", "vendor/quinn-proto", "vendor/rustls", "vendor/shadowsocks", "vendor/tun-rs"]
+exclude = ["vendor/boring", "vendor/h3", "vendor/h2", "vendor/mio", "vendor/quinn", "vendor/quinn-proto", "vendor/rustls", "vendor/shadowsocks", "vendor/tun-rs", "vendor/nowhere"]
 
 [workspace.package]
 version = "0.1.0"
@@ -66,6 +66,7 @@ concord-rpc = { path = "crates/rpc" }
 concord-ipc = { path = "crates/ipc" }
 concord-ffi = { path = "crates/ffi" }
 concord-test-support = { path = "crates/test-support" }
+nowhere = { path = "vendor/nowhere" }
 
 # Runtime. tokio >= 1.54.1 fixes a timer race that caused a use-after-free
 # (GHSA-5wjr-9356-4wc8).

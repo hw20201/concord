@@ -29,6 +29,7 @@ pub const T0_PROXY_TYPES: &[&str] = &[
     "hysteria2",
     "tuic",
     "anytls",
+    "nowhere",
     "socks5",
     "http",
 ];
@@ -186,6 +187,7 @@ fn parse_typed(
         "hysteria2" => ProxyKind::Hysteria2(Box::new(parse_hysteria2(f, caps)?)),
         "tuic" => ProxyKind::Tuic(Box::new(parse_tuic(f, caps)?)),
         "anytls" => ProxyKind::AnyTls(Box::new(parse_anytls(f, caps)?)),
+        "nowhere" => ProxyKind::Nowhere(Box::new(parse_nowhere(f)?)),
         "socks5" => ProxyKind::Socks5(parse_socks5(f)?),
         "gost-relay" => ProxyKind::GostRelay(Box::new(gost_relay_opts(f)?)),
         "http" => ProxyKind::Http(parse_http(f)?),
@@ -643,6 +645,110 @@ fn parse_tuic(f: &mut Fields<'_>, caps: &Capabilities) -> R<TuicOpts> {
         return quarantine("tuic: either 'token' or both 'uuid' and 'password' must be set");
     }
     Ok(out)
+}
+
+fn is_lower_hex(text: &str, len: usize) -> bool {
+    text.len() == len
+        && text
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+
+fn parse_nowhere(f: &mut Fields<'_>) -> R<NowhereOpts> {
+    let (server, port) = server_port(f)?;
+    if port == 0 {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: port must be between 1 and 65535",
+        )));
+    }
+    let password = f.req_string("password")?;
+    if !is_lower_hex(&password, 32) {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: password must be exactly 32 lowercase hexadecimal characters",
+        )));
+    }
+    let network = f.string("network")?.to_ascii_lowercase();
+    let network = if network.is_empty() {
+        "tcp".to_string()
+    } else {
+        network
+    };
+    if network != "tcp" && network != "udp" {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: network must be tcp or udp",
+        )));
+    }
+    let mut sni = f.string("sni")?;
+    if sni == "none" {
+        sni.clear();
+    }
+    if sni.parse::<std::net::IpAddr>().is_ok()
+        || sni.contains(['/', '\\', '@', '?', '#', ' ', '\t', '\r', '\n'])
+    {
+        return Err(Fail::Hard(ConfigError::new("nowhere: invalid SNI")));
+    }
+    let pin = f.string("pin")?;
+    if !pin.is_empty() && !is_lower_hex(&pin, 64) {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: pin must be 64 lowercase hexadecimal characters",
+        )));
+    }
+    let morph = f.opt_bool("morph")?.unwrap_or(true);
+    let tcp_prelude = prelude(f, "tcp-prelude")?;
+    let udp_prelude = prelude(f, "udp-prelude")?;
+    let handshake_timeout = timeout_ms(f, "handshake-timeout")?;
+    let setup_timeout = timeout_ms(f, "setup-timeout")?;
+    // The carrier is always TLS 1.3 with the fixed ALPN and a verified
+    // certificate, so TLS cannot be switched off and its knobs do not exist.
+    if f.has("tls") && !f.boolean("tls")? {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: TLS is always enabled",
+        )));
+    }
+    if f.boolean("skip-cert-verify")?
+        || !f.string("client-fingerprint")?.is_empty()
+        || f.has("alpn")
+    {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: skip-cert-verify, client-fingerprint and custom ALPN are unsupported",
+        )));
+    }
+    f.ignore("reality-opts", "this type does not use REALITY");
+    f.ignore("ech-opts", "this type does not use ECH");
+    Ok(NowhereOpts {
+        server,
+        port,
+        password,
+        network,
+        sni,
+        pin,
+        morph,
+        tcp_prelude,
+        udp_prelude,
+        handshake_timeout,
+        setup_timeout,
+    })
+}
+
+fn prelude(f: &mut Fields<'_>, key: &str) -> R<String> {
+    let value = f.string(key)?;
+    if matches!(value.as_str(), "" | "fade" | "full8" | "low7") {
+        Ok(value)
+    } else {
+        Err(Fail::Hard(ConfigError::new(format!(
+            "nowhere: {key} must be fade, full8 or low7"
+        ))))
+    }
+}
+
+fn timeout_ms(f: &mut Fields<'_>, key: &str) -> R<u32> {
+    let value = f.i64(key)?;
+    if !(0..=300_000).contains(&value) {
+        return Err(Fail::Hard(ConfigError::new(format!(
+            "nowhere: {key} must be between 0 and 300000 milliseconds"
+        ))));
+    }
+    Ok(u32::try_from(value).unwrap_or(0))
 }
 
 fn parse_anytls(f: &mut Fields<'_>, caps: &Capabilities) -> R<AnyTlsOpts> {
@@ -1510,6 +1616,94 @@ mod tests {
             parse(raw).unwrap_err().to_string(),
             "masque handshake timeout must be non-negative"
         );
+    }
+    #[test]
+    fn nowhere_reads_its_options_and_keeps_its_defaults() {
+        let key = "0123456789abcdef0123456789abcdef";
+        let ProxyKind::Nowhere(opts) = def(
+            json!({"name": "n", "type": "nowhere", "server": "n.example", "port": 443,
+                "password": key}),
+        )
+        .kind
+        else {
+            panic!("not nowhere")
+        };
+        assert_eq!(
+            *opts,
+            NowhereOpts {
+                server: "n.example".into(),
+                port: 443,
+                password: key.into(),
+                network: "tcp".into(),
+                morph: true,
+                ..NowhereOpts::default()
+            }
+        );
+        let ProxyKind::Nowhere(opts) = def(
+            json!({"name": "n", "type": "nowhere", "server": "n.example", "port": 8443,
+                "password": key, "network": "udp", "sni": "s.example",
+                "pin": "a".repeat(64), "morph": false, "tcp-prelude": "full8",
+                "udp-prelude": "low7", "handshake-timeout": 5000, "setup-timeout": 10000}),
+        )
+        .kind
+        else {
+            panic!("not nowhere")
+        };
+        assert_eq!(opts.network, "udp");
+        assert_eq!(opts.sni, "s.example");
+        assert_eq!(opts.pin.len(), 64);
+        assert!(!opts.morph);
+        assert_eq!(opts.tcp_prelude, "full8");
+        assert_eq!(opts.udp_prelude, "low7");
+        assert_eq!((opts.handshake_timeout, opts.setup_timeout), (5000, 10000));
+    }
+
+    #[test]
+    fn nowhere_rejects_a_bad_key_pin_network_prelude_and_timeout() {
+        let key = "0123456789abcdef0123456789abcdef";
+        let base = json!({"name": "n", "type": "nowhere", "server": "n.example", "port": 443,
+            "password": key});
+        for (field, value, message) in [
+            ("password", json!("0123"), "password"),
+            (
+                "password",
+                json!("0123456789ABCDEF0123456789ABCDEF"),
+                "password",
+            ),
+            ("network", json!("quic"), "network"),
+            ("pin", json!("ab"), "pin"),
+            ("pin", json!("A".repeat(64)), "pin"),
+            ("sni", json!("127.0.0.1"), "SNI"),
+            ("tcp-prelude", json!("random"), "tcp-prelude"),
+            ("handshake-timeout", json!(-1), "handshake-timeout"),
+            ("handshake-timeout", json!(300001), "handshake-timeout"),
+            ("setup-timeout", json!(300001), "setup-timeout"),
+            ("port", json!(0), "port"),
+        ] {
+            let mut node = base.clone();
+            node[field] = value;
+            assert!(error(node).contains(message), "{field}");
+        }
+    }
+
+    #[test]
+    fn nowhere_rejects_disabled_tls_and_security_overrides() {
+        let key = "0123456789abcdef0123456789abcdef";
+        let base = json!({"name": "n", "type": "nowhere", "server": "n.example", "port": 443,
+            "password": key});
+        for (field, value) in [
+            ("tls", json!(false)),
+            ("skip-cert-verify", json!(true)),
+            ("client-fingerprint", json!("chrome")),
+            ("alpn", json!(["h2"])),
+        ] {
+            let mut node = base.clone();
+            node[field] = value;
+            assert!(error(node).contains("nowhere"), "{field}");
+        }
+        let mut node = base.clone();
+        node["tls"] = json!(true);
+        assert!(matches!(parse(node), Ok(ProxyParse::Ok(_))));
     }
 }
 
