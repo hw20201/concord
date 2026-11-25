@@ -153,6 +153,9 @@ fn vector_url(opts: &NowhereOpts, host: &str) -> String {
     if !opts.morph {
         query.push("morph=0".to_string());
     }
+    if opts.cipher == "aes" {
+        query.push("cipher=aes".to_string());
+    }
     let sni = if opts.sni.is_empty() {
         opts.server.clone()
     } else {

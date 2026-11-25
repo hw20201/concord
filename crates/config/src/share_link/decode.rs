@@ -418,6 +418,9 @@ fn decode_line(
             if !link.get("pin").is_empty() {
                 map.insert("pin".into(), text(link.get("pin")));
             }
+            if link.get("cipher") == "aes" {
+                map.insert("cipher".into(), text("aes"));
+            }
             out.push(map);
         }
         _ => {}

@@ -284,7 +284,7 @@ fn proxy_links_read_back() {
     check(
         json!({"name": "nw", "type": "nowhere", "server": "n.example", "port": 443,
             "password": "0123456789abcdef0123456789abcdef", "network": "udp",
-            "sni": "s.example", "pin": "a".repeat(64), "morph": false}),
+            "sni": "s.example", "pin": "a".repeat(64), "morph": false, "cipher": "aes"}),
         "nowhere://0123456789abcdef0123456789abcdef@n.example:443?",
         &[
             ("name", "nw"),
@@ -296,6 +296,7 @@ fn proxy_links_read_back() {
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             ),
             ("morph", "false"),
+            ("cipher", "aes"),
         ],
     );
     check(

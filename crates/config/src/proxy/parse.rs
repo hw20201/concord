@@ -694,6 +694,12 @@ fn parse_nowhere(f: &mut Fields<'_>) -> R<NowhereOpts> {
         )));
     }
     let morph = f.opt_bool("morph")?.unwrap_or(true);
+    let cipher = f.string("cipher")?.to_ascii_lowercase();
+    if !matches!(cipher.as_str(), "" | "chacha" | "aes") {
+        return Err(Fail::Hard(ConfigError::new(
+            "nowhere: cipher must be chacha or aes",
+        )));
+    }
     let tcp_prelude = prelude(f, "tcp-prelude")?;
     let udp_prelude = prelude(f, "udp-prelude")?;
     let handshake_timeout = timeout_ms(f, "handshake-timeout")?;
@@ -723,6 +729,7 @@ fn parse_nowhere(f: &mut Fields<'_>) -> R<NowhereOpts> {
         sni,
         pin,
         morph,
+        cipher,
         tcp_prelude,
         udp_prelude,
         handshake_timeout,
@@ -1642,7 +1649,7 @@ mod tests {
         let ProxyKind::Nowhere(opts) = def(
             json!({"name": "n", "type": "nowhere", "server": "n.example", "port": 8443,
                 "password": key, "network": "udp", "sni": "s.example",
-                "pin": "a".repeat(64), "morph": false, "tcp-prelude": "full8",
+                "pin": "a".repeat(64), "morph": false, "cipher": "aes", "tcp-prelude": "full8",
                 "udp-prelude": "low7", "handshake-timeout": 5000, "setup-timeout": 10000}),
         )
         .kind
@@ -1653,6 +1660,7 @@ mod tests {
         assert_eq!(opts.sni, "s.example");
         assert_eq!(opts.pin.len(), 64);
         assert!(!opts.morph);
+        assert_eq!(opts.cipher, "aes");
         assert_eq!(opts.tcp_prelude, "full8");
         assert_eq!(opts.udp_prelude, "low7");
         assert_eq!((opts.handshake_timeout, opts.setup_timeout), (5000, 10000));
@@ -1671,6 +1679,7 @@ mod tests {
                 "password",
             ),
             ("network", json!("quic"), "network"),
+            ("cipher", json!("rc4"), "cipher"),
             ("pin", json!("ab"), "pin"),
             ("pin", json!("A".repeat(64)), "pin"),
             ("sni", json!("127.0.0.1"), "SNI"),

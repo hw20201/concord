@@ -451,6 +451,9 @@ pub struct NowhereOpts {
     pub sni: String,
     pub pin: String,
     pub morph: bool,
+    /// Morph stream cipher: empty or `chacha` selects ChaCha20-IETF, `aes`
+    /// selects AES-128-CTR (Nowhere 3.4.0; both peers must agree).
+    pub cipher: String,
     pub tcp_prelude: String,
     pub udp_prelude: String,
     pub handshake_timeout: u32,

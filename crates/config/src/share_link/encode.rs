@@ -528,6 +528,9 @@ fn nowhere(f: Fields<'_>) -> String {
     if f.str("morph") == "false" {
         set(&mut query, "morph", "0");
     }
+    if f.str("cipher") == "aes" {
+        set(&mut query, "cipher", "aes");
+    }
     set_if(&mut query, "sni", f.str("sni"));
     set_if(&mut query, "pin", f.str("pin"));
     share_url(

@@ -31,6 +31,7 @@ fn the_url_carries_every_option_only_when_set() {
         sni: "s.example".into(),
         pin: "a".repeat(64),
         morph: false,
+        cipher: "aes".into(),
         tcp_prelude: "full8".into(),
         udp_prelude: "low7".into(),
         handshake_timeout: 5000,
@@ -40,7 +41,7 @@ fn the_url_carries_every_option_only_when_set() {
     assert_eq!(
         vector_url(&opts, "2001:db8::1"),
         "vector://0123456789abcdef0123456789abcdef@[2001:db8::1]/udp:443\
-         ?morph=0&sni=s.example&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
+         ?morph=0&cipher=aes&sni=s.example&pin=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\
          &tcp-prelude=full8&udp-prelude=low7&handshake-timeout=5000&setup-timeout=10000"
     );
 }
